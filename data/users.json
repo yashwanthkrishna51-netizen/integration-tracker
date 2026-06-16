@@ -1,0 +1,16 @@
+[
+  {
+    "id": "u1",
+    "username": "yashwanth.k",
+    "name": "Yashwanth K",
+    "passwordHash": "fc1c2eb8c10da83e4c11bdcc0fef7631f71e9a540e2d1475e8a49e62c69c8c77",
+    "role": "admin"
+  },
+  {
+    "id": "u2",
+    "username": "himanshu",
+    "name": "Himanshu",
+    "passwordHash": "fc1c2eb8c10da83e4c11bdcc0fef7631f71e9a540e2d1475e8a49e62c69c8c77",
+    "role": "viewer"
+  }
+]
