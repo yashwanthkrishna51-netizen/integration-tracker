@@ -754,5 +754,12 @@
         ]
       }
     ]
+  },
+  {
+    "id": "mqgvasrayd8j",
+    "name": "Tri Legal",
+    "description": "",
+    "createdAt": "2026-06-16T16:39:41.590Z",
+    "integrations": []
   }
 ]
