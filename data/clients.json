@@ -764,11 +764,11 @@
       {
         "id": "mqgvcafs6ejm",
         "name": "DarwinBox Microsoft FnO HRMS and Leave",
-        "status": "Not Started",
-        "assignee": "",
+        "status": "At Risk",
+        "assignee": "Yashwanth",
         "dueDate": "2026-06-30",
         "description": "One Way integration between DB and FnO, Custom Integration as FnO APIs are to be consumed for both Employee Data and Leaves",
-        "nextAction": "",
+        "nextAction": "Client to share sample file and FnO APIs for us to take it ahead, however modules are still not implemented for integration to be picked up",
         "timeline": []
       }
     ]
