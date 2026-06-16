@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -19,7 +18,7 @@
 <div id="app"></div>
 <script>
 // ─── STATE ────────────────────────────────────────────────────────
-const S={user:null,clients:[],users:[],shas:{clients:null,users:null},view:'login',params:{},adminTab:'clients',filter:'all',search:'',modal:null,toast:null};
+const S={user:null,clients:[],users:[],shas:{clients:null,users:null},sessionToken:null,view:'login',params:{},adminTab:'clients',filter:'all',search:'',modal:null,toast:null};
 
 // ─── CONSTANTS ────────────────────────────────────────────────────
 const STATUSES=['Not Started','In Progress','At Risk','On Hold','Completed'];
@@ -50,14 +49,14 @@ function showToast(msg,type='success'){
 
 // ─── API ──────────────────────────────────────────────────────────
 async function apiRead(path){
-  const r=await fetch(`/api/read?path=${encodeURIComponent(path)}`);
+  const r=await fetch(`/api/read?path=${encodeURIComponent(path)}`,{headers:{'x-session-token':S.sessionToken||''}});
   if(!r.ok)throw new Error(`Read ${r.status}`);
   const d=await r.json();
   if(d.message&&!d.content)throw new Error(d.message);
   return{content:JSON.parse(atob(d.content.replace(/\n/g,''))),sha:d.sha};
 }
 async function apiWrite(path,obj,sha,msg){
-  const r=await fetch('/api/write',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,content:JSON.stringify(obj,null,2),sha,message:msg})});
+  const r=await fetch('/api/write',{method:'POST',headers:{'Content-Type':'application/json','x-session-token':S.sessionToken||''},body:JSON.stringify({path,content:JSON.stringify(obj,null,2),sha,message:msg})});
   if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||e.message||`Write ${r.status}`);}
   const d=await r.json();return d.sha||d.content?.sha;
 }
@@ -489,11 +488,16 @@ document.addEventListener('click',async e=>{
     const errEl=document.getElementById('lerr');
     if(!u||!p){if(errEl){errEl.textContent='Enter username and password';errEl.classList.remove('hidden');}return;}
     const hash=await sha256(p);
-    try{const[cl,us]=await Promise.all([apiRead('data/clients.json'),apiRead('data/users.json')]);S.clients=cl.content;S.shas.clients=cl.sha;S.users=us.content;S.shas.users=us.sha;}
-    catch(err){const e2=document.getElementById('lerr');if(e2){e2.textContent='Connection failed. Check repo/env setup.';e2.classList.remove('hidden');}return;}
-    const user=S.users.find(x=>x.username===u&&x.passwordHash===hash);
-    if(!user){const e2=document.getElementById('lerr');if(e2){e2.textContent='Invalid credentials';e2.classList.remove('hidden');}return;}
-    S.user=user;navigate('clients');return;
+    let ld;
+    try{
+      const lr=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,passwordHash:hash})});
+      ld=await lr.json();
+      if(!lr.ok){const e2=document.getElementById('lerr');if(e2){e2.textContent=ld.error||'Login failed';e2.classList.remove('hidden');}return;}
+    }catch(err){const e2=document.getElementById('lerr');if(e2){e2.textContent='Connection failed. Check repo/env setup.';e2.classList.remove('hidden');}return;}
+    S.sessionToken=ld.token;S.user=ld.user;S.shas.users=ld.usersSha;
+    try{const cl=await apiRead('data/clients.json');S.clients=cl.content;S.shas.clients=cl.sha;}
+    catch(err){const e2=document.getElementById('lerr');if(e2){e2.textContent='Loaded user but failed to load clients.';e2.classList.remove('hidden');}return;}
+    navigate('clients');return;
   }
   if(act==='logout'){S.user=null;S.clients=[];S.users=[];S.shas={clients:null,users:null};navigate('login');return;}
   if(act==='nav-clients'){navigate('clients');return;}
