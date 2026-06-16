@@ -769,7 +769,15 @@
         "dueDate": "2026-06-30",
         "description": "One Way integration between DB and FnO, Custom Integration as FnO APIs are to be consumed for both Employee Data and Leaves",
         "nextAction": "Client to share sample file and FnO APIs for us to take it ahead, however modules are still not implemented for integration to be picked up",
-        "timeline": []
+        "timeline": [
+          {
+            "id": "mqgvf0mzpuv0",
+            "date": "2026-06-16",
+            "update": "Call with client and vendor, listed down all dependencies that client has to share",
+            "addedBy": "Yashwanth K",
+            "addedAt": "2026-06-16T16:42:58.427Z"
+          }
+        ]
       }
     ]
   }
