@@ -760,6 +760,17 @@
     "name": "Tri Legal",
     "description": "",
     "createdAt": "2026-06-16T16:39:41.590Z",
-    "integrations": []
+    "integrations": [
+      {
+        "id": "mqgvcafs6ejm",
+        "name": "DarwinBox Microsoft FnO HRMS and Leave",
+        "status": "Not Started",
+        "assignee": "",
+        "dueDate": "2026-06-30",
+        "description": "One Way integration between DB and FnO, Custom Integration as FnO APIs are to be consumed for both Employee Data and Leaves",
+        "nextAction": "",
+        "timeline": []
+      }
+    ]
   }
 ]
