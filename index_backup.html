@@ -300,7 +300,10 @@ function renderClientList(){
   </div>
   <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
     <h1 class="text-xl font-bold text-gray-900">Clients</h1>
-    <input id="search-inp" data-act="search" type="text" placeholder="Search clients…" value="${esc(S.search)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+    <div class="flex items-center gap-2">
+      <input id="search-inp" data-act="search" type="text" placeholder="Search clients…" value="${esc(S.search)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+      <button data-act="modal-open" data-modal="add-client" class="whitespace-nowrap bg-[#0e7490] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">+ Add Client</button>
+    </div>
   </div>
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
     ${fl.length?fl.map(c=>{
@@ -364,7 +367,7 @@ function renderClientDetail(clientId){
   </div>
   <div class="flex gap-2 overflow-x-auto pb-1 mb-5 items-center">
     ${['all',...STATUSES].map(st=>`<button data-act="filter" data-filter="${st}" class="whitespace-nowrap text-xs font-medium px-3 py-1.5 rounded-full transition ${S.filter===st?'bg-[#0e7490] text-white':'bg-white border border-gray-200 text-gray-600 hover:border-[#0e7490]/40'}">${st==='all'?`All (${c.integrations.length})`:esc(st)+` (${c.integrations.filter(i=>i.status===st).length})`}</button>`).join('')}
-    ${can('admin')?`<button data-act="modal-open" data-modal="add-integ" data-cid="${c.id}" class="whitespace-nowrap text-xs font-medium px-3 py-1.5 rounded-full bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 ml-auto">+ Add Integration</button>`:''}
+    <button data-act="modal-open" data-modal="add-integ" data-cid="${c.id}" class="whitespace-nowrap text-xs font-medium px-3 py-1.5 rounded-full bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 ml-auto">+ Add Integration</button>
   </div>
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <table class="w-full text-sm">
