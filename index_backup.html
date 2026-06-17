@@ -30,7 +30,7 @@ th[data-sort]:hover{background:#f0f7f9}
 <div id="app"></div>
 <script>
 // ─── STATE ────────────────────────────────────────────────────────
-const S={user:null,clients:[],users:[],shas:{clients:null,users:null},sessionToken:null,view:'login',params:{},adminTab:'clients',filter:'all',search:'',modal:null,toast:null,sidebarCollapsed:false,sidebarClientsOpen:true,sort:{key:'name',dir:'asc'}};
+const S={user:null,clients:[],users:[],shas:{clients:null,users:null},sessionToken:null,view:'login',params:{},adminTab:'clients',filter:'all',search:'',modal:null,toast:null,sidebarCollapsed:false,sidebarClientsOpen:true,sort:{key:'name',dir:'asc'},editingTimelineId:null,expandedHistory:new Set()};
 
 try{S.sidebarCollapsed=localStorage.getItem('itk_sb_collapsed')==='1';}catch(e){}
 
@@ -49,7 +49,7 @@ function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function fmtDate(s){if(!s)return'—';try{return new Date(s).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});}catch{return s;}}
 function can(p){if(!S.user)return false;const r={admin:3,editor:2,viewer:1};return(r[S.user.role]||0)>=(r[p]||0);}
-function navigate(view,params={}){S.view=view;S.params=params;S.filter='all';S.search='';S.modal=null;S.sort={key:'name',dir:'asc'};render();}
+function navigate(view,params={}){S.view=view;S.params=params;S.filter='all';S.search='';S.modal=null;S.sort={key:'name',dir:'asc'};S.editingTimelineId=null;S.expandedHistory=new Set();render();}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function daysDiff(dateStr){if(!dateStr)return null;const d=new Date(dateStr+'T00:00:00');const t=new Date(todayStr()+'T00:00:00');return Math.round((t-d)/86400000);}
 function isOverdue(i){if(i.status==='Completed'||!i.dueDate)return false;return daysDiff(i.dueDate)>0;}
@@ -170,6 +170,7 @@ function renderSidebar(){
         <div class="text-[10px] text-gray-400 capitalize">${esc(S.user?.role)}</div>
       </div>
     </div>`:''}
+    <div class="flex justify-center mb-1.5">${collapsed?encBadge({compact:true}):encBadge()}</div>
     <button data-act="logout" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition ${collapsed?'justify-center':''}">
       <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>${collapsed?'':'Sign out'}
     </button>
@@ -181,6 +182,18 @@ function renderSidebar(){
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────
+function lockIcon(cls='w-3.5 h-3.5'){return`<svg class="${cls} shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-12V7a4 4 0 10-8 0v4h8z"/></svg>`;}
+function encBadge(opts={}){
+  const{compact=false}=opts;
+  if(compact){
+    return`<div class="flex items-center justify-center" title="Secured with AES-256 industry-grade encryption">
+      <div class="w-8 h-8 rounded-full bg-gray-50 border border-gray-200 flex items-center justify-center text-base">🔒</div>
+    </div>`;
+  }
+  return`<div class="inline-flex items-center gap-2 bg-gray-50 border border-gray-200 text-gray-500 text-[11px] font-medium px-3.5 py-2 rounded-2xl leading-tight text-center">
+    <span class="text-sm">🔒</span><span>Secured with AES-256 industry-grade encryption</span>
+  </div>`;
+}
 function renderLogin(){
   return`<div class="min-h-screen bg-gradient-to-br from-[#0d3d4f] via-[#0e7490] to-[#0d3d4f] flex items-center justify-center p-4">
   <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm fade">
@@ -199,6 +212,7 @@ function renderLogin(){
       <div id="lerr" class="hidden text-xs text-rose-500 text-center bg-rose-50 py-2 rounded-lg px-3"></div>
       <button data-act="login" class="w-full bg-[#0e7490] text-white font-semibold rounded-xl py-2.5 text-sm hover:bg-[#0d3d4f] transition-colors">Sign In</button>
     </div>
+    <div class="flex justify-center mt-6">${encBadge()}</div>
   </div>
 </div>`;
 }
@@ -425,15 +439,40 @@ function renderIntegDetail(clientId,integId){
       </div>`:''}
       <div class="space-y-3 max-h-[440px] overflow-y-auto pr-1">
         ${!(i.timeline?.length)?`<p class="text-sm text-gray-400 text-center py-8">No updates yet</p>`:
-        i.timeline.map((t,idx,arr)=>`<div class="relative pl-5 ${idx<arr.length-1?'pb-3 border-l-2 border-gray-100':''}">
+        i.timeline.map((t,idx,arr)=>{
+          const isEditing=S.editingTimelineId===t.id;
+          const hasHistory=t.edits&&t.edits.length>0;
+          const isExpanded=S.expandedHistory.has(t.id);
+          if(isEditing){
+            return`<div class="relative pl-5 ${idx<arr.length-1?'pb-3 border-l-2 border-gray-100':''}">
+              <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 bg-[#0e7490] rounded-full border-2 border-white ring-1 ring-[#0e7490]/30"></div>
+              <div class="text-xs font-semibold text-[#0e7490] mb-1">${esc(t.date)} · ${esc(t.addedBy||'')}</div>
+              <textarea id="edit-tl-${t.id}" rows="3" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(t.update)}</textarea>
+              <div class="flex gap-2 mt-2">
+                <button data-act="cancel-edit-timeline" class="flex-1 text-xs font-medium text-gray-500 border border-gray-200 rounded-lg py-1.5 hover:bg-gray-50 transition">Cancel</button>
+                <button data-act="save-edit-timeline" data-cid="${c.id}" data-iid="${i.id}" data-tid="${t.id}" class="flex-1 text-xs font-semibold text-white bg-[#0e7490] rounded-lg py-1.5 hover:bg-[#0d3d4f] transition">Save Edit</button>
+              </div>
+            </div>`;
+          }
+          return`<div class="relative pl-5 ${idx<arr.length-1?'pb-3 border-l-2 border-gray-100':''}">
           <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 bg-[#0e7490] rounded-full border-2 border-white ring-1 ring-[#0e7490]/30"></div>
           <div class="flex items-start justify-between gap-2">
             <div class="text-xs font-semibold text-[#0e7490] mb-1">${esc(t.date)} · ${esc(t.addedBy||'')}</div>
-            <button data-act="copy-update" data-text="${esc(t.update)}" class="text-[10px] text-gray-300 hover:text-[#0e7490] shrink-0">Copy</button>
+            <div class="flex items-center gap-2 shrink-0">
+              ${can('edit')?`<button data-act="edit-timeline" data-tid="${t.id}" class="text-[10px] text-gray-300 hover:text-[#0e7490]">Edit</button>`:''}
+              <button data-act="copy-update" data-text="${esc(t.update)}" class="text-[10px] text-gray-300 hover:text-[#0e7490]">Copy</button>
+            </div>
           </div>
           <p class="text-sm text-gray-700 leading-relaxed">${esc(t.update)}</p>
-          ${t.addedAt?`<div class="text-xs text-gray-400 mt-1">${fmtDate(t.addedAt)}</div>`:''}
-        </div>`).join('')}
+          <div class="flex items-center gap-3 mt-1 flex-wrap">
+            ${t.addedAt?`<span class="text-xs text-gray-400">${fmtDate(t.addedAt)}</span>`:''}
+            ${hasHistory?`<button data-act="toggle-history" data-tid="${t.id}" class="text-xs text-amber-600 hover:text-amber-700 font-medium">✎ edited${t.edits.length>1?` (${t.edits.length}×)`:''} — ${isExpanded?'hide':'view'} history</button>`:''}
+          </div>
+          ${isExpanded&&hasHistory?`<div class="mt-2 pl-3 border-l-2 border-amber-200 space-y-2">
+            ${[...t.edits].reverse().map(e=>`<div class="text-xs"><div class="text-gray-400 mb-0.5">${fmtDate(e.editedAt)} · ${esc(e.editedBy||'')} changed it from:</div><div class="text-gray-500">${esc(e.text)}</div></div>`).join('')}
+          </div>`:''}
+        </div>`;
+        }).join('')}
       </div>
     </div>
   </div>
@@ -701,6 +740,9 @@ document.addEventListener('click',async e=>{
   if(act==='exp-pptx'){setBtnBusy(el,'Generating…');try{await exportPptx(el.dataset.id);}finally{clearBtnBusy(el);}return;}
   if(act==='exp-pdf'){setBtnBusy(el,'Generating…');try{await exportPdf(el.dataset.id);}finally{clearBtnBusy(el);}return;}
   if(act==='copy-update'){try{await navigator.clipboard.writeText(el.dataset.text);showToast('Copied ✓');}catch(e){showToast('Copy failed','error');}return;}
+  if(act==='edit-timeline'){if(!can('edit'))return;S.editingTimelineId=el.dataset.tid;render();setTimeout(()=>{const ta=document.getElementById(`edit-tl-${el.dataset.tid}`);if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}},50);return;}
+  if(act==='cancel-edit-timeline'){S.editingTimelineId=null;render();return;}
+  if(act==='toggle-history'){const tid=el.dataset.tid;if(S.expandedHistory.has(tid))S.expandedHistory.delete(tid);else S.expandedHistory.add(tid);render();return;}
   if(act==='modal-open'){S.modal={type:el.dataset.modal,cid:el.dataset.cid};render();setTimeout(()=>document.getElementById('m1')?.focus(),50);return;}
   if(act==='modal-close'){if(S.modal?.busy)return;S.modal=null;render();return;}
 
@@ -741,6 +783,23 @@ document.addEventListener('click',async e=>{
     i.timeline.unshift(entry);setBtnBusy(el,'Saving…');
     try{await saveClients(`Timeline: ${i.name}`);showToast('Update added ✓');navigate('integ-detail',{clientId:cid,integId:iid});}
     catch(err){i.timeline.shift();showToast('Failed: '+err.message,'error');clearBtnBusy(el);}
+    return;
+  }
+  if(act==='save-edit-timeline'){
+    if(!can('edit'))return;
+    const cid=el.dataset.cid,iid=el.dataset.iid,tid=el.dataset.tid;
+    const c=S.clients.find(x=>x.id===cid);const i=c?.integrations.find(x=>x.id===iid);if(!i)return;
+    const idx=i.timeline.findIndex(x=>x.id===tid);if(idx<0)return;
+    const newText=document.getElementById(`edit-tl-${tid}`)?.value.trim();
+    if(!newText){showToast('Update cannot be empty','error');return;}
+    const original=i.timeline[idx];
+    if(newText===original.update){S.editingTimelineId=null;render();return;}
+    const snapshot=JSON.parse(JSON.stringify(original));
+    const updated={...original,edits:[...(original.edits||[]),{text:original.update,editedAt:new Date().toISOString(),editedBy:S.user.name}],update:newText,lastEditedAt:new Date().toISOString(),lastEditedBy:S.user.name};
+    i.timeline[idx]=updated;
+    setBtnBusy(el,'Saving…');
+    try{await saveClients(`Edit timeline: ${i.name}`);S.editingTimelineId=null;showToast('Update edited ✓');navigate('integ-detail',{clientId:cid,integId:iid});}
+    catch(err){i.timeline[idx]=snapshot;showToast('Failed: '+err.message,'error');clearBtnBusy(el);}
     return;
   }
   if(act==='delete-client'){
