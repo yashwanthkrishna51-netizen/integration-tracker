@@ -15,6 +15,13 @@
         "nextAction": "Client to share sample file and FnO APIs for us to take it ahead, however modules are still not implemented for integration to be picked up",
         "timeline": [
           {
+            "id": "mqhndcb1zbjm",
+            "date": "2026-06-17",
+            "update": "Client has shared the sample file with fields and masters, API details still pending",
+            "addedBy": "Yashwanth K",
+            "addedAt": "2026-06-17T05:45:29.485Z"
+          },
+          {
             "id": "mqgvf0mzpuv0",
             "date": "2026-06-16",
             "update": "Call with client and vendor, listed down all dependencies that client has to share",
