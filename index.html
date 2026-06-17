@@ -628,25 +628,45 @@ async function exportPptx(clientId){
         {text:i.dueDate?fmtDate(i.dueDate):'—',options:{fontSize:8.5,color:'4b5563',fill:{color:idx%2?'FFFFFF':'f9fafb'}}},
       ])];
     s2.addTable(rows,{x:.3,y:1.9,w:12.7,colW:[5.2,2.2,2.8,2.5],border:{type:'solid',color:'e5e7eb',pt:.5}});
-    // Per-integration
-    c.integrations.forEach(i=>{
+    // Integration Details — paginated table (replaces one-slide-per-integration)
+    const ROWS_PER_SLIDE=4;
+    const detailRows=c.integrations.map(i=>{
+      const latest=i.timeline?.[0];
+      const updateText=latest?(latest.update.length>150?latest.update.slice(0,150)+'…':latest.update):'No updates yet.';
+      const updateDate=latest?fmtDate(latest.date):'';
+      const nextText=i.nextAction?(i.nextAction.length>100?i.nextAction.slice(0,100)+'…':i.nextAction):'';
+      const overdueTxt=isOverdue(i)?`⚠ ${daysOverdue(i)}d overdue`:'';
+      return{name:i.name,assignee:i.assignee||'Unassigned',status:i.status,due:i.dueDate?fmtDate(i.dueDate):'—',overdueTxt,updateText,updateDate,nextText};
+    });
+    const chunks=[];
+    for(let idx=0;idx<detailRows.length;idx+=ROWS_PER_SLIDE){chunks.push(detailRows.slice(idx,idx+ROWS_PER_SLIDE));}
+    chunks.forEach((chunk,pageIdx)=>{
       const sl=pptx.addSlide();sl.background={color:'FFFFFF'};
-      sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.3,h:.75,fill:{color:NV},line:{type:'none'}});
-      sl.addText(i.name,{x:.4,y:.1,w:9.5,h:.55,fontSize:15,color:'FFFFFF',bold:true});
-      sl.addShape(pptx.ShapeType.rect,{x:10.2,y:.12,w:2.7,h:.5,fill:{color:SHEX[i.status]||'64748b'},line:{type:'none'}});
-      sl.addText(i.status,{x:10.2,y:.12,w:2.7,h:.5,fontSize:9.5,color:'FFFFFF',bold:true,align:'center',valign:'middle'});
-      sl.addText('Details',{x:.4,y:.95,w:6,h:.35,fontSize:11,bold:true,color:NV});
-      [{l:'Assignee',v:i.assignee||'—'},{l:'Due Date',v:i.dueDate?fmtDate(i.dueDate):'—'},{l:'Description',v:i.description||'—'},{l:'Next Action',v:i.nextAction||'—'}]
-      .forEach(({l,v},di)=>{const y=1.4+di*.78;sl.addText(l+':',{x:.4,y,w:1.8,h:.3,fontSize:8.5,bold:true,color:'374151'});sl.addText(v.length>90?v.slice(0,90)+'…':v,{x:.4,y:y+.28,w:6.2,h:.4,fontSize:8.5,color:'6b7280',wrap:true});});
-      sl.addShape(pptx.ShapeType.rect,{x:7.0,y:.82,w:.02,h:6.4,fill:{color:'e5e7eb'},line:{type:'none'}});
-      sl.addText('Timeline',{x:7.2,y:.95,w:5.8,h:.35,fontSize:11,bold:true,color:NV});
-      const tls=(i.timeline||[]).slice(0,4);
-      if(!tls.length){sl.addText('No updates yet',{x:7.2,y:1.5,w:5.8,h:.4,fontSize:9,color:'9ca3af',italic:true});}
-      else tls.forEach((t,ti)=>{const y=1.38+ti*1.3;
-        sl.addShape(pptx.ShapeType.ellipse,{x:7.05,y:y+.04,w:.18,h:.18,fill:{color:MG},line:{type:'none'}});
-        sl.addText(fmtDate(t.date)+(t.addedBy?' · '+t.addedBy:''),{x:7.28,y,w:5.6,h:.28,fontSize:8.5,color:NV,bold:true});
-        sl.addText(t.update.length>130?t.update.slice(0,130)+'…':t.update,{x:7.28,y:y+.28,w:5.6,h:.68,fontSize:8.5,color:'374151',wrap:true});
-        sl.addText('— '+(t.addedBy||''),{x:7.28,y:y+.98,w:5.6,h:.22,fontSize:7.5,color:'9ca3af',italic:true});});
+      sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.3,h:.7,fill:{color:NV},line:{type:'none'}});
+      sl.addText('Integration Details',{x:.4,y:.1,w:8,h:.5,fontSize:15,color:'FFFFFF',bold:true});
+      sl.addText(`${c.name}${chunks.length>1?`  ·  Page ${pageIdx+1} of ${chunks.length}`:''}`,{x:.4,y:.1,w:12.5,h:.5,fontSize:10,color:'7dd3e8',align:'right'});
+      const headerRow=[
+        {text:'',options:{fill:{color:NV}}},
+        {text:'Integration',options:{bold:true,fill:{color:NV},color:'FFFFFF',fontSize:9}},
+        {text:'Status',options:{bold:true,fill:{color:NV},color:'FFFFFF',fontSize:9}},
+        {text:'Due Date',options:{bold:true,fill:{color:NV},color:'FFFFFF',fontSize:9}},
+        {text:'Latest Update & Next Steps',options:{bold:true,fill:{color:NV},color:'FFFFFF',fontSize:9}},
+      ];
+      const bodyRows=chunk.map((row,ri)=>{
+        const bg=ri%2?'FFFFFF':'f5f9fa';
+        return[
+          {text:'',options:{fill:{color:SHEX[row.status]||'64748b'}}},
+          {text:[{text:row.name+'\n',options:{bold:true,fontSize:9,color:'1f2937'}},{text:row.assignee,options:{fontSize:7.5,color:'9ca3af'}}],options:{fill:{color:bg},valign:'top'}},
+          {text:row.status,options:{bold:true,fontSize:8.5,color:SHEX[row.status]||'64748b',fill:{color:bg},valign:'top'}},
+          {text:row.overdueTxt?[{text:row.due+'\n',options:{fontSize:8.5,color:'374151'}},{text:row.overdueTxt,options:{fontSize:7,bold:true,color:'be185d'}}]:row.due,options:{fill:{color:bg},valign:'top',fontSize:8.5,color:'374151'}},
+          {text:[
+            {text:'Update: ',options:{bold:true,fontSize:8,color:'374151'}},
+            {text:row.updateText+(row.updateDate?` (${row.updateDate})`:'')+'\n',options:{fontSize:8,color:'4b5563'}},
+            ...(row.nextText?[{text:'Next: ',options:{bold:true,fontSize:7.5,italic:true,color:'9ca3af'}},{text:row.nextText,options:{fontSize:7.5,italic:true,color:'9ca3af'}}]:[]),
+          ],options:{fill:{color:bg},valign:'top'}},
+        ];
+      });
+      sl.addTable([headerRow,...bodyRows],{x:.3,y:.9,w:12.7,colW:[0.12,2.6,1.3,1.5,7.18],border:{type:'solid',color:'e5e7eb',pt:.5}});
     });
     // Thank you
     const sL=pptx.addSlide();sL.background={color:NV};
@@ -679,20 +699,39 @@ function exportPdf(clientId){
     [{l:'Total',v:c.integrations.length,rgb:NV},{l:'In Progress',v:sg['In Progress']||0,rgb:SRGB['In Progress']},{l:'At Risk',v:sg['At Risk']||0,rgb:SRGB['At Risk']},{l:'Completed',v:sg['Completed']||0,rgb:SRGB['Completed']},{l:'On Hold',v:sg['On Hold']||0,rgb:SRGB['On Hold']}]
     .forEach(({l,v,rgb},i)=>{const x=10+i*57;doc.setFillColor(...rgb);doc.roundedRect(x,18,50,20,2,2,'F');doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(255,255,255);doc.text(String(v),x+25,30,{align:'center'});doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.text(l,x+25,37,{align:'center'});});
     doc.autoTable({startY:42,head:[['Integration','Status','Assignee','Due Date']],body:c.integrations.map(i=>[i.name,i.status,i.assignee||'—',i.dueDate?fmtDate(i.dueDate):'—']),headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:9},styles:{fontSize:8.5,cellPadding:3},alternateRowStyles:{fillColor:[245,249,250]},columnStyles:{0:{cellWidth:105},1:{cellWidth:40},2:{cellWidth:60},3:{cellWidth:50}},didParseCell:d=>{if(d.column.index===1&&d.section==='body'){const rgb=SRGB[d.cell.raw];if(rgb){d.cell.styles.textColor=rgb;d.cell.styles.fontStyle='bold';}}},margin:{left:10,right:10}});
-    // Per-integration
-    c.integrations.forEach(i=>{
-      doc.addPage();doc.setFillColor(...NV);doc.rect(0,0,W,14,'F');
-      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text(i.name.length>50?i.name.slice(0,50)+'…':i.name,10,9.5);
-      const srgb=SRGB[i.status]||[100,116,139];doc.setFillColor(...srgb);doc.roundedRect(240,3,52,9,2,2,'F');doc.setFontSize(8.5);doc.text(i.status,266,9,{align:'center'});
-      let y=22;doc.setTextColor(...NV);doc.setFontSize(10.5);doc.setFont('helvetica','bold');doc.text('Details',10,y);y+=3;
-      doc.setDrawColor(229,231,235);doc.setLineWidth(.3);doc.line(10,y,142,y);y+=6;
-      [{l:'Assignee',v:i.assignee||'—'},{l:'Due Date',v:i.dueDate?fmtDate(i.dueDate):'—'},{l:'Description',v:i.description||'—'},{l:'Next Action',v:i.nextAction||'—'}]
-      .forEach(({l,v})=>{doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(75,85,99);doc.text(l,10,y);y+=4;doc.setFont('helvetica','normal');doc.setTextColor(107,114,128);doc.setFontSize(8.5);const lines=doc.splitTextToSize(v,124);doc.text(lines.slice(0,4),10,y);y+=lines.slice(0,4).length*4+4;});
-      doc.setDrawColor(229,231,235);doc.line(150,16,150,H-8);
-      let ty=22;doc.setTextColor(...NV);doc.setFontSize(10.5);doc.setFont('helvetica','bold');doc.text('Timeline',156,ty);ty+=3;doc.line(156,ty,290,ty);ty+=6;
-      const tls=(i.timeline||[]).slice(0,4);
-      if(!tls.length){doc.setFont('helvetica','italic');doc.setFontSize(9);doc.setTextColor(156,163,175);doc.text('No updates yet',156,ty);}
-      else tls.forEach(t=>{doc.setFillColor(...MG);doc.circle(154.5,ty,1.5,'F');doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(...NV);doc.text(fmtDate(t.date)+(t.addedBy?' · '+t.addedBy:''),158,ty);ty+=5;doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(55,65,81);const lines=doc.splitTextToSize(t.update,126);doc.text(lines.slice(0,4),158,ty);ty+=lines.slice(0,4).length*4.2+6;});
+    // Integration Details — single autoTable call, natively paginates across as many pages as needed
+    doc.addPage();
+    const detailRows=c.integrations.map(i=>{
+      const latest=i.timeline?.[0];
+      const updateText=latest?(latest.update.length>150?latest.update.slice(0,150)+'…':latest.update):'No updates yet.';
+      const updateDate=latest?fmtDate(latest.date):'';
+      const nextText=i.nextAction?(i.nextAction.length>100?i.nextAction.slice(0,100)+'…':i.nextAction):'';
+      const overdue=isOverdue(i);
+      const dueCell=i.dueDate?fmtDate(i.dueDate):'—';
+      const updateCell='Update: '+updateText+(updateDate?` (${updateDate})`:'')+(nextText?('\nNext: '+nextText):'');
+      return{status:i.status,overdue,row:['',i.name+'\n'+(i.assignee||'Unassigned'),i.status,overdue?`${dueCell}\n⚠ ${daysOverdue(i)}d overdue`:dueCell,updateCell]};
+    });
+    doc.autoTable({
+      startY:16,
+      margin:{top:16,left:10,right:10,bottom:10},
+      head:[['','Integration','Status','Due Date','Latest Update & Next Steps']],
+      body:detailRows.map(d=>d.row),
+      headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:9},
+      styles:{fontSize:8,cellPadding:3,valign:'top'},
+      alternateRowStyles:{fillColor:[245,249,250]},
+      columnStyles:{0:{cellWidth:3},1:{cellWidth:62},2:{cellWidth:28},3:{cellWidth:32},4:{cellWidth:'auto'}},
+      didParseCell:d=>{
+        if(d.section!=='body')return;
+        const meta=detailRows[d.row.index];if(!meta)return;
+        if(d.column.index===0){d.cell.styles.fillColor=SRGB[meta.status]||[100,116,139];d.cell.text=[''];}
+        if(d.column.index===2){const rgb=SRGB[meta.status];if(rgb){d.cell.styles.textColor=rgb;d.cell.styles.fontStyle='bold';}}
+        if(d.column.index===3&&meta.overdue){d.cell.styles.textColor=[190,24,93];d.cell.styles.fontStyle='bold';}
+      },
+      didDrawPage:()=>{
+        doc.setFillColor(...NV);doc.rect(0,0,W,14,'F');
+        doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text('Integration Details',10,9.5);
+        doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(c.name,W-10,9.5,{align:'right'});
+      },
     });
     // Thank you
     doc.addPage();doc.setFillColor(...NV);doc.rect(0,0,W,H,'F');
