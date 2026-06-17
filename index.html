@@ -21,9 +21,12 @@
 th[data-sort]:hover{background:#f0f7f9}
 .brand-k{color:#0e7490}
 .brand-dot{color:#b5179e}
+#loading-bar{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,#0e7490,#b5179e);z-index:200;width:0%;opacity:0;transition:width .3s ease,opacity .2s ease}
+.btn-busy{pointer-events:none;opacity:.7}
 </style>
 </head>
 <body class="bg-[#f5f9fa] text-gray-900">
+<div id="loading-bar"></div>
 <div id="app"></div>
 <script>
 // ─── STATE ────────────────────────────────────────────────────────
@@ -66,18 +69,43 @@ function showToast(msg,type='success'){
   if(_tt)clearTimeout(_tt);_tt=setTimeout(()=>{const x=document.getElementById('toast');if(x)x.style.display='none';},3500);
 }
 
+// ─── GLOBAL LOADING BAR ───────────────────────────────────────────
+let _loadingCount=0;
+function startLoading(){
+  _loadingCount++;
+  const b=document.getElementById('loading-bar');if(!b)return;
+  b.style.opacity='1';b.style.width='65%';
+}
+function stopLoading(){
+  _loadingCount=Math.max(0,_loadingCount-1);
+  const b=document.getElementById('loading-bar');if(!b)return;
+  if(_loadingCount===0){
+    b.style.width='100%';
+    setTimeout(()=>{if(_loadingCount===0){b.style.opacity='0';b.style.width='0%';}},250);
+  }
+}
+function spinnerSvg(extra=''){return`<svg class="animate-spin h-3.5 w-3.5 ${extra}" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>`;}
+function setBtnBusy(el,label){if(!el)return;el.dataset._origHtml=el.innerHTML;el.disabled=true;el.classList.add('btn-busy');el.innerHTML=`<span class="inline-flex items-center justify-center gap-2">${spinnerSvg()}${label||'Working…'}</span>`;}
+function clearBtnBusy(el){if(!el)return;if(el.dataset._origHtml!==undefined){el.innerHTML=el.dataset._origHtml;delete el.dataset._origHtml;}el.disabled=false;el.classList.remove('btn-busy');}
+
 // ─── API ──────────────────────────────────────────────────────────
 async function apiRead(path){
-  const r=await fetch(`/api/read?path=${encodeURIComponent(path)}`,{headers:{'x-session-token':S.sessionToken||''}});
-  if(!r.ok)throw new Error(`Read ${r.status}`);
-  const d=await r.json();
-  if(d.message&&!d.content)throw new Error(d.message);
-  return{content:JSON.parse(atob(d.content.replace(/\n/g,''))),sha:d.sha};
+  startLoading();
+  try{
+    const r=await fetch(`/api/read?path=${encodeURIComponent(path)}`,{headers:{'x-session-token':S.sessionToken||''}});
+    if(!r.ok)throw new Error(`Read ${r.status}`);
+    const d=await r.json();
+    if(d.message&&!d.content)throw new Error(d.message);
+    return{content:JSON.parse(atob(d.content.replace(/\n/g,''))),sha:d.sha};
+  }finally{stopLoading();}
 }
 async function apiWrite(path,obj,sha,msg){
-  const r=await fetch('/api/write',{method:'POST',headers:{'Content-Type':'application/json','x-session-token':S.sessionToken||''},body:JSON.stringify({path,content:JSON.stringify(obj,null,2),sha,message:msg})});
-  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||e.message||`Write ${r.status}`);}
-  const d=await r.json();return d.sha||d.content?.sha;
+  startLoading();
+  try{
+    const r=await fetch('/api/write',{method:'POST',headers:{'Content-Type':'application/json','x-session-token':S.sessionToken||''},body:JSON.stringify({path,content:JSON.stringify(obj,null,2),sha,message:msg})});
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||e.message||`Write ${r.status}`);}
+    const d=await r.json();return d.sha||d.content?.sha;
+  }finally{stopLoading();}
 }
 async function saveClients(msg){S.shas.clients=await apiWrite('data/clients.json',S.clients,S.shas.clients,msg||'Update clients');}
 async function saveUsers(msg){S.shas.users=await apiWrite('data/users.json',S.users,S.shas.users,msg||'Update users');}
@@ -511,16 +539,18 @@ function renderModal(){
     title='Confirm';btnLabel='Delete';btnCls='bg-rose-600 hover:bg-rose-700';
     body=`<p class="text-sm text-gray-600">${esc(m.msg||'Are you sure? This cannot be undone.')}</p>`;
   }
+  const busy=!!m.busy;
+  const busyLabel=m.type==='confirm'?'Deleting…':'Saving…';
   return`<div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 fade" id="modal-overlay">
   <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
     <div class="flex items-center justify-between mb-5">
       <h2 class="font-bold text-gray-900">${esc(title)}</h2>
-      <button data-act="modal-close" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+      <button data-act="modal-close" ${busy?'disabled class="text-gray-200 text-xl leading-none cursor-not-allowed"':'class="text-gray-400 hover:text-gray-600 text-xl leading-none"'}>✕</button>
     </div>
     ${body}
     <div class="flex gap-3 mt-6">
-      <button data-act="modal-close" class="flex-1 border border-gray-200 text-gray-600 font-medium rounded-xl py-2.5 text-sm hover:bg-gray-50 transition">Cancel</button>
-      <button data-act="modal-confirm" class="flex-1 ${btnCls} text-white font-semibold rounded-xl py-2.5 text-sm transition">${btnLabel}</button>
+      <button data-act="modal-close" ${busy?'disabled':''} class="flex-1 border border-gray-200 text-gray-600 font-medium rounded-xl py-2.5 text-sm hover:bg-gray-50 transition ${busy?'opacity-50 cursor-not-allowed':''}">Cancel</button>
+      <button data-act="modal-confirm" ${busy?'disabled':''} class="flex-1 ${btnCls} text-white font-semibold rounded-xl py-2.5 text-sm transition flex items-center justify-center gap-2 ${busy?'opacity-80 cursor-not-allowed':''}">${busy?spinnerSvg()+busyLabel:btnLabel}</button>
     </div>
   </div>
 </div>`;
@@ -633,7 +663,7 @@ function exportPdf(clientId){
 
 // ─── EVENTS ───────────────────────────────────────────────────────
 document.addEventListener('click',async e=>{
-  if(e.target.id==='modal-overlay'&&e.target===e.currentTarget){S.modal=null;render();return;}
+  if(e.target.id==='modal-overlay'&&e.target===e.currentTarget){if(S.modal?.busy)return;S.modal=null;render();return;}
   const el=e.target.closest('[data-act]');if(!el)return;
   const act=el.dataset.act;
 
@@ -641,16 +671,18 @@ document.addEventListener('click',async e=>{
     const u=document.getElementById('lu')?.value.trim(),p=document.getElementById('lp')?.value;
     const errEl=document.getElementById('lerr');
     if(!u||!p){if(errEl){errEl.textContent='Enter username and password';errEl.classList.remove('hidden');}return;}
+    setBtnBusy(el,'Signing in…');
+    if(errEl)errEl.classList.add('hidden');
     const hash=await sha256(p);
     let ld;
     try{
       const lr=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,passwordHash:hash})});
       ld=await lr.json();
-      if(!lr.ok){const e2=document.getElementById('lerr');if(e2){e2.textContent=ld.error||'Login failed';e2.classList.remove('hidden');}return;}
-    }catch(err){const e2=document.getElementById('lerr');if(e2){e2.textContent='Connection failed. Check repo/env setup.';e2.classList.remove('hidden');}return;}
+      if(!lr.ok){clearBtnBusy(el);const e2=document.getElementById('lerr');if(e2){e2.textContent=ld.error||'Login failed';e2.classList.remove('hidden');}return;}
+    }catch(err){clearBtnBusy(el);const e2=document.getElementById('lerr');if(e2){e2.textContent='Connection failed. Check repo/env setup.';e2.classList.remove('hidden');}return;}
     S.sessionToken=ld.token;S.user=ld.user;S.shas.users=ld.usersSha;
     try{const cl=await apiRead('data/clients.json');S.clients=cl.content;S.shas.clients=cl.sha;}
-    catch(err){const e2=document.getElementById('lerr');if(e2){e2.textContent='Loaded user but failed to load clients.';e2.classList.remove('hidden');}return;}
+    catch(err){clearBtnBusy(el);const e2=document.getElementById('lerr');if(e2){e2.textContent='Loaded user but failed to load clients.';e2.classList.remove('hidden');}return;}
     if(can('admin')){try{const us=await apiRead('data/users.json');S.users=us.content;S.shas.users=us.sha;}catch(err){S.users=[S.user];}}
     else{S.users=[S.user];}
     navigate('dashboard');return;
@@ -666,11 +698,11 @@ document.addEventListener('click',async e=>{
   if(act==='filter'){S.filter=el.dataset.filter;render();return;}
   if(act==='sort'){const k=el.dataset.key;if(S.sort.key===k){S.sort.dir=S.sort.dir==='asc'?'desc':'asc';}else{S.sort={key:k,dir:'asc'};}render();return;}
   if(act==='admin-tab'){S.adminTab=el.dataset.tab;render();return;}
-  if(act==='exp-pptx'){await exportPptx(el.dataset.id);return;}
-  if(act==='exp-pdf'){exportPdf(el.dataset.id);return;}
+  if(act==='exp-pptx'){setBtnBusy(el,'Generating…');try{await exportPptx(el.dataset.id);}finally{clearBtnBusy(el);}return;}
+  if(act==='exp-pdf'){setBtnBusy(el,'Generating…');try{await exportPdf(el.dataset.id);}finally{clearBtnBusy(el);}return;}
   if(act==='copy-update'){try{await navigator.clipboard.writeText(el.dataset.text);showToast('Copied ✓');}catch(e){showToast('Copy failed','error');}return;}
   if(act==='modal-open'){S.modal={type:el.dataset.modal,cid:el.dataset.cid};render();setTimeout(()=>document.getElementById('m1')?.focus(),50);return;}
-  if(act==='modal-close'){S.modal=null;render();return;}
+  if(act==='modal-close'){if(S.modal?.busy)return;S.modal=null;render();return;}
 
   if(act==='mark-complete'){
     if(!can('edit'))return;
@@ -679,7 +711,7 @@ document.addEventListener('click',async e=>{
     const prevStatus=i.status;i.status='Completed';
     const entry={id:uid(),date:todayStr(),update:'Marked as Completed.',addedBy:S.user.name,addedAt:new Date().toISOString()};
     i.timeline.unshift(entry);
-    el.textContent='Saving…';el.disabled=true;
+    setBtnBusy(el,'Saving…');
     try{await saveClients(`Complete: ${i.name}`);showToast('Marked complete ✓');navigate('integ-detail',{clientId:cid,integId:iid});}
     catch(err){i.status=prevStatus;i.timeline.shift();showToast('Failed: '+err.message,'error');render();}
     return;
@@ -694,9 +726,9 @@ document.addEventListener('click',async e=>{
     i.dueDate=document.getElementById('f-due')?.value||'';
     i.description=document.getElementById('f-desc')?.value?.trim()||'';
     i.nextAction=document.getElementById('f-next')?.value?.trim()||'';
-    el.textContent='Saving…';el.disabled=true;
+    setBtnBusy(el,'Saving…');
     try{await saveClients(`Update ${i.name}`);showToast('Saved ✓');navigate('integ-detail',{clientId:cid,integId:iid});}
-    catch(err){Object.assign(i,prev);showToast('Save failed: '+err.message,'error');el.textContent='Save Changes';el.disabled=false;}
+    catch(err){Object.assign(i,prev);showToast('Save failed: '+err.message,'error');clearBtnBusy(el);}
     return;
   }
   if(act==='add-timeline'){
@@ -706,9 +738,9 @@ document.addEventListener('click',async e=>{
     if(!text){showToast('Enter an update','error');return;}
     const c=S.clients.find(x=>x.id===cid);const i=c?.integrations.find(x=>x.id===iid);if(!i)return;
     const entry={id:uid(),date:todayStr(),update:text,addedBy:S.user.name,addedAt:new Date().toISOString()};
-    i.timeline.unshift(entry);el.textContent='Saving…';el.disabled=true;
+    i.timeline.unshift(entry);setBtnBusy(el,'Saving…');
     try{await saveClients(`Timeline: ${i.name}`);showToast('Update added ✓');navigate('integ-detail',{clientId:cid,integId:iid});}
-    catch(err){i.timeline.shift();showToast('Failed: '+err.message,'error');el.textContent='+ Add Update';el.disabled=false;}
+    catch(err){i.timeline.shift();showToast('Failed: '+err.message,'error');clearBtnBusy(el);}
     return;
   }
   if(act==='delete-client'){
@@ -724,31 +756,52 @@ document.addEventListener('click',async e=>{
     S.modal={type:'confirm',msg:`Delete user "${u.name}" (${u.username})?`,_act:'delete-user',_uid:u.id};render();return;
   }
   if(act==='modal-confirm'){
-    const m=S.modal;if(!m)return;
+    const m=S.modal;if(!m||m.busy)return;
     if(m.type==='confirm'){
-      S.modal=null;render();
-      if(m._act==='delete-client'){const idx=S.clients.findIndex(x=>x.id===m._id);if(idx<0)return;const[rem]=S.clients.splice(idx,1);try{await saveClients(`Delete ${rem.name}`);showToast(`${rem.name} deleted`);navigate('clients');}catch(err){S.clients.splice(idx,0,rem);showToast('Failed: '+err.message,'error');render();}}
-      else if(m._act==='delete-integ'){const c=S.clients.find(x=>x.id===m._cid);if(!c)return;const idx=c.integrations.findIndex(x=>x.id===m._iid);if(idx<0)return;const[rem]=c.integrations.splice(idx,1);try{await saveClients(`Delete ${rem.name}`);showToast(`${rem.name} deleted`);navigate('client-detail',{clientId:m._cid});}catch(err){c.integrations.splice(idx,0,rem);showToast('Failed: '+err.message,'error');render();}}
-      else if(m._act==='delete-user'){const idx=S.users.findIndex(x=>x.id===m._uid);if(idx<0)return;const[rem]=S.users.splice(idx,1);try{await saveUsers(`Delete ${rem.username}`);showToast(`${rem.name} removed`);render();}catch(err){S.users.splice(idx,0,rem);showToast('Failed: '+err.message,'error');render();}}
+      S.modal={...m,busy:true};render();
+      if(m._act==='delete-client'){
+        const idx=S.clients.findIndex(x=>x.id===m._id);if(idx<0){S.modal=null;render();return;}
+        const[rem]=S.clients.splice(idx,1);
+        try{await saveClients(`Delete ${rem.name}`);S.modal=null;showToast(`${rem.name} deleted`);render();}
+        catch(err){S.clients.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
+      else if(m._act==='delete-integ'){
+        const c=S.clients.find(x=>x.id===m._cid);if(!c){S.modal=null;render();return;}
+        const idx=c.integrations.findIndex(x=>x.id===m._iid);if(idx<0){S.modal=null;render();return;}
+        const[rem]=c.integrations.splice(idx,1);
+        try{await saveClients(`Delete ${rem.name}`);S.modal=null;showToast(`${rem.name} deleted`);navigate('client-detail',{clientId:m._cid});}
+        catch(err){c.integrations.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
+      else if(m._act==='delete-user'){
+        const idx=S.users.findIndex(x=>x.id===m._uid);if(idx<0){S.modal=null;render();return;}
+        const[rem]=S.users.splice(idx,1);
+        try{await saveUsers(`Delete ${rem.username}`);S.modal=null;showToast(`${rem.name} removed`);render();}
+        catch(err){S.users.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
     } else if(m.type==='add-client'){
       const name=document.getElementById('m1')?.value.trim(),desc=document.getElementById('m2')?.value.trim();
       if(!name){showToast('Name required','error');return;}
-      const nc={id:uid(),name,description:desc||'',createdAt:new Date().toISOString(),integrations:[]};S.clients.push(nc);S.modal=null;render();
-      try{await saveClients(`Add ${name}`);showToast(`${name} added`);}catch(err){S.clients.pop();showToast('Failed: '+err.message,'error');render();}
+      const nc={id:uid(),name,description:desc||'',createdAt:new Date().toISOString(),integrations:[]};
+      S.clients.push(nc);S.modal={...m,busy:true};render();
+      try{await saveClients(`Add ${name}`);S.modal=null;showToast(`${name} added`);render();}
+      catch(err){S.clients.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
     } else if(m.type==='add-integ'){
       const cid=document.getElementById('m0')?.value,name=document.getElementById('m1')?.value.trim();
       if(!name){showToast('Name required','error');return;}
       const c=S.clients.find(x=>x.id===cid);if(!c)return;
       const ni={id:uid(),name,status:document.getElementById('m2')?.value||'Not Started',assignee:document.getElementById('m3')?.value.trim()||'',dueDate:document.getElementById('m4')?.value||'',description:document.getElementById('m5')?.value.trim()||'',nextAction:'',timeline:[]};
-      c.integrations.push(ni);S.modal=null;render();
-      try{await saveClients(`Add ${name} to ${c.name}`);showToast(`${name} added`);}catch(err){c.integrations.pop();showToast('Failed: '+err.message,'error');render();}
+      c.integrations.push(ni);S.modal={...m,busy:true};render();
+      try{await saveClients(`Add ${name} to ${c.name}`);S.modal=null;showToast(`${name} added`);render();}
+      catch(err){c.integrations.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
     } else if(m.type==='add-user'){
       const username=document.getElementById('m1')?.value.trim(),name=document.getElementById('m2')?.value.trim(),password=document.getElementById('m3')?.value,role=document.getElementById('m4')?.value;
       if(!username||!name||!password){showToast('All fields required','error');return;}
       if(S.users.find(x=>x.username===username)){showToast('Username taken','error');return;}
+      S.modal={...m,busy:true};render();
       const hash=await sha256(password);
-      const nu={id:uid(),username,name,passwordHash:hash,role};S.users.push(nu);S.modal=null;render();
-      try{await saveUsers(`Add ${username}`);showToast(`${name} added`);}catch(err){S.users.pop();showToast('Failed: '+err.message,'error');render();}
+      const nu={id:uid(),username,name,passwordHash:hash,role};S.users.push(nu);
+      try{await saveUsers(`Add ${username}`);S.modal=null;showToast(`${name} added`);render();}
+      catch(err){S.users.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
     }
   }
 });
@@ -756,8 +809,8 @@ document.addEventListener('click',async e=>{
 document.addEventListener('change',async e=>{
   const el=e.target.closest('[data-act="change-role"]');if(!el||!can('admin'))return;
   const u=S.users.find(x=>x.id===el.dataset.uid);if(!u||u.id===S.user?.id)return;
-  const prev=u.role;u.role=el.value;
-  try{await saveUsers(`Role: ${u.username}`);showToast(`${u.name} → ${u.role}`);}
+  const prev=u.role;u.role=el.value;el.disabled=true;
+  try{await saveUsers(`Role: ${u.username}`);showToast(`${u.name} → ${u.role}`);el.disabled=false;}
   catch(err){u.role=prev;showToast('Failed','error');render();}
 });
 
@@ -771,7 +824,7 @@ document.addEventListener('input',e=>{
 
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&S.view==='login')document.querySelector('[data-act="login"]')?.click();
-  if(e.key==='Escape'&&S.modal){S.modal=null;render();}
+  if(e.key==='Escape'&&S.modal&&!S.modal.busy){S.modal=null;render();}
 });
 
 // ─── INIT ─────────────────────────────────────────────────────────
