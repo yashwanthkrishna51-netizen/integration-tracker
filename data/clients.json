@@ -1,160 +1,13 @@
 [
   {
-    "id": "c3",
-    "name": "CMA CGM",
-    "description": "CMA CGM ÃÂ¢ÃÂÃÂ global shipping company. Oracle HCM, ADP Payroll, and Kronos WFM integrations.",
-    "createdAt": "2025-02-01T09:00:00Z",
-    "integrations": [
-      {
-        "id": "i301",
-        "name": "Darwinbox ÃÂ¢ÃÂÃÂ Oracle HCM Sync",
-        "status": "In Progress",
-        "assignee": "Bhalchandra",
-        "dueDate": "2025-08-31",
-        "description": "Employee master data sync from Darwinbox to Oracle HCM Cloud. Covers 6000+ employees across 15 countries.",
-        "nextAction": "Complete testing for multi-country employee records. Handle timezone and date format variations.",
-        "timeline": [
-          {
-            "id": "t3011",
-            "date": "2025-06-11",
-            "update": "Phase 1 (India employees) sync tested successfully. Phase 2 (APAC) blocked on country-specific attribute mapping.",
-            "addedBy": "Bhalchandra",
-            "addedAt": "2025-06-11T15:00:00Z"
-          },
-          {
-            "id": "t3012",
-            "date": "2025-05-20",
-            "update": "Oracle HCM REST API integrated. Authentication with JWT working. HSDL payload builder completed.",
-            "addedBy": "Bhalchandra",
-            "addedAt": "2025-05-20T13:30:00Z"
-          },
-          {
-            "id": "t3013",
-            "date": "2025-04-25",
-            "update": "Scoping workshop with CMA CGM HRIT team in Paris (virtual). 120 fields identified for sync.",
-            "addedBy": "Bhalchandra",
-            "addedAt": "2025-04-25T10:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "i302",
-        "name": "ADP Payroll Integration",
-        "status": "On Hold",
-        "assignee": "Saiteja",
-        "dueDate": "2025-10-01",
-        "description": "Monthly payroll file delivery from Darwinbox to ADP Global Payroll for CMA CGM France entity. On hold ÃÂ¢ÃÂÃÂ ADP contract renewal in progress.",
-        "nextAction": "Track ADP contract status. Resume design once new contract confirmed.",
-        "timeline": [
-          {
-            "id": "t3021",
-            "date": "2025-05-10",
-            "update": "Project paused. CMA CGM procurement team renegotiating ADP global contract. ETA: August 2025.",
-            "addedBy": "Saiteja",
-            "addedAt": "2025-05-10T12:00:00Z"
-          },
-          {
-            "id": "t3022",
-            "date": "2025-04-15",
-            "update": "Initial scoping done. ADP API explored. File format specification received from ADP team.",
-            "addedBy": "Saiteja",
-            "addedAt": "2025-04-15T14:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "i303",
-        "name": "Kronos Workforce Integration",
-        "status": "Not Started",
-        "assignee": "Yashwanth K",
-        "dueDate": "2025-11-01",
-        "description": "Sync employee schedules and attendance from Kronos WFM into Darwinbox for leave reconciliation.",
-        "nextAction": "Add to Q4 roadmap. Collect Kronos API documentation from CMA CGM IT.",
-        "timeline": [
-          {
-            "id": "t3031",
-            "date": "2025-06-01",
-            "update": "Requirement confirmed in roadmap review. Kronos WFM version: 8.1. API docs requested from CMA CGM IT.",
-            "addedBy": "Yashwanth K",
-            "addedAt": "2025-06-01T09:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "i304",
-        "name": "SAP Concur Expense Sync",
-        "status": "In Progress",
-        "assignee": "CMA CGM",
-        "dueDate": "2025-08-01",
-        "description": "Push approved expense reports from SAP Concur into Darwinbox for reimbursement processing against employee records.",
-        "nextAction": "Resolve OAuth token refresh issue in Concur sandbox. Expected fix by June 20.",
-        "timeline": [
-          {
-            "id": "t3041",
-            "date": "2025-06-07",
-            "update": "OAuth token refresh failing after 1hr. Raised with Concur support ÃÂ¢ÃÂÃÂ ticket #SCC-8847. Workaround: manual token re-auth every hour (not acceptable).",
-            "addedBy": "Harsha",
-            "addedAt": "2025-06-07T16:00:00Z"
-          },
-          {
-            "id": "t3042",
-            "date": "2025-05-25",
-            "update": "Concur API integrated. Expense report fetch working. Mapping to Darwinbox payroll fields 70% complete.",
-            "addedBy": "Harsha",
-            "addedAt": "2025-05-25T14:00:00Z"
-          },
-          {
-            "id": "t3043",
-            "date": "2025-05-05",
-            "update": "Kickoff done. Concur sandbox access received. 18 expense categories to be mapped.",
-            "addedBy": "Harsha",
-            "addedAt": "2025-05-05T11:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "i305",
-        "name": "LDAP Directory Sync",
-        "status": "Completed",
-        "assignee": "Bhalchandra",
-        "dueDate": "2025-06-15",
-        "description": "One-way LDAP sync from Darwinbox to CMA CGM Active Directory for employee attribute updates ÃÂ¢ÃÂÃÂ email, designation, department, manager.",
-        "nextAction": "",
-        "timeline": [
-          {
-            "id": "t3051",
-            "date": "2025-06-12",
-            "update": "Live for 3 weeks. 220+ attribute updates processed without issues. Scheduled at 2AM IST daily. Monitoring dashboard shared with CMA CGM IT.",
-            "addedBy": "Bhalchandra",
-            "addedAt": "2025-06-12T09:00:00Z"
-          },
-          {
-            "id": "t3052",
-            "date": "2025-05-30",
-            "update": "UAT completed. 100% attribute match verified across 3200 employee records.",
-            "addedBy": "Bhalchandra",
-            "addedAt": "2025-05-30T16:00:00Z"
-          },
-          {
-            "id": "t3053",
-            "date": "2025-05-10",
-            "update": "LDAP connector configured. Attribute mapping done for 12 fields. Test sync with 50 records successful.",
-            "addedBy": "Bhalchandra",
-            "addedAt": "2025-05-10T13:00:00Z"
-          }
-        ]
-      }
-    ]
-  },
-  {
     "id": "c4",
     "name": "AU Bank",
-    "description": "AU Small Finance Bank ÃÂ¢ÃÂÃÂ Finacle HRMS, D365 leave, and approver mapping integrations.",
+    "description": "AU Small Finance Bank ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Finacle HRMS, D365 leave, and approver mapping integrations.",
     "createdAt": "2025-02-15T09:00:00Z",
     "integrations": [
       {
         "id": "i401",
-        "name": "Finacle ÃÂ¢ÃÂÃÂ Darwinbox Employee Sync",
+        "name": "Finacle ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Darwinbox Employee Sync",
         "status": "Completed",
         "assignee": "Saiteja",
         "dueDate": "2025-05-01",
@@ -193,7 +46,7 @@
       },
       {
         "id": "i402",
-        "name": "Darwinbox Leave ÃÂ¢ÃÂÃÂ D365 F&O Sync",
+        "name": "Darwinbox Leave ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ D365 F&O Sync",
         "status": "In Progress",
         "assignee": "Yashwanth K",
         "dueDate": "2025-07-31",
@@ -203,7 +56,7 @@
           {
             "id": "t4021",
             "date": "2025-06-10",
-            "update": "OData batch write working for leave balances. Testing leave cancellation reversal scenario ÃÂ¢ÃÂÃÂ edge case identified.",
+            "update": "OData batch write working for leave balances. Testing leave cancellation reversal scenario ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ edge case identified.",
             "addedBy": "Yashwanth K",
             "addedAt": "2025-06-10T14:30:00Z"
           },
@@ -229,7 +82,7 @@
         "status": "At Risk",
         "assignee": "Harsha",
         "dueDate": "2025-07-15",
-        "description": "Sync appraisal ratings from AU Bank internal tool into Darwinbox for performance module. Blocked by internal tool API being deprecated ÃÂ¢ÃÂÃÂ migration underway.",
+        "description": "Sync appraisal ratings from AU Bank internal tool into Darwinbox for performance module. Blocked by internal tool API being deprecated ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ migration underway.",
         "nextAction": "Wait for AU Bank IT to confirm new appraisal tool API. Escalated to project manager.",
         "timeline": [
           {
@@ -242,7 +95,7 @@
           {
             "id": "t4032",
             "date": "2025-05-20",
-            "update": "Initial API exploration done. Appraisal data model documented. API deprecation notice received from AU Bank IT ÃÂ¢ÃÂÃÂ escalated.",
+            "update": "Initial API exploration done. Appraisal data model documented. API deprecation notice received from AU Bank IT ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ escalated.",
             "addedBy": "Harsha",
             "addedAt": "2025-05-20T12:00:00Z"
           }
@@ -310,17 +163,17 @@
   {
     "id": "c5",
     "name": "MakeMyTrip",
-    "description": "MakeMyTrip ÃÂ¢ÃÂÃÂ India's leading travel platform. BambooHR, Salesforce, and Slack integrations.",
+    "description": "MakeMyTrip ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ India's leading travel platform. BambooHR, Salesforce, and Slack integrations.",
     "createdAt": "2025-03-01T09:00:00Z",
     "integrations": [
       {
         "id": "i501",
-        "name": "BambooHR ÃÂ¢ÃÂÃÂ Darwinbox Sync",
+        "name": "BambooHR ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Darwinbox Sync",
         "status": "In Progress",
         "assignee": "Harsha",
         "dueDate": "2025-08-15",
         "description": "Migrate and sync employee data from BambooHR into Darwinbox as MMT consolidates HR systems. One-time migration + ongoing delta sync.",
-        "nextAction": "Complete data cleansing on BambooHR export. 340 records have missing manager IDs ÃÂ¢ÃÂÃÂ flagged to MMT HR.",
+        "nextAction": "Complete data cleansing on BambooHR export. 340 records have missing manager IDs ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ flagged to MMT HR.",
         "timeline": [
           {
             "id": "t5011",
@@ -407,14 +260,14 @@
           {
             "id": "t5041",
             "date": "2025-06-09",
-            "update": "Salesforce Shield encryption enabled on target fields ÃÂ¢ÃÂÃÂ API writes now failing with FIELD_INTEGRITY_EXCEPTION. Escalated to MMT SF admin.",
+            "update": "Salesforce Shield encryption enabled on target fields ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ API writes now failing with FIELD_INTEGRITY_EXCEPTION. Escalated to MMT SF admin.",
             "addedBy": "Saiteja",
             "addedAt": "2025-06-09T15:00:00Z"
           },
           {
             "id": "t5042",
             "date": "2025-05-30",
-            "update": "Salesforce Connected App set up. OAuth working. Write to standard Contact object successful. Custom field writes failing ÃÂ¢ÃÂÃÂ encryption issue found.",
+            "update": "Salesforce Connected App set up. OAuth working. Write to standard Contact object successful. Custom field writes failing ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ encryption issue found.",
             "addedBy": "Saiteja",
             "addedAt": "2025-05-30T13:00:00Z"
           },
@@ -434,7 +287,7 @@
         "assignee": "Harsha",
         "dueDate": "2025-10-01",
         "description": "Auto-create Jira IT tickets when Darwinbox onboarding tasks trigger hardware/software requests at MMT.",
-        "nextAction": "Resume Q4. MMT IT rebuilding Jira project structure ÃÂ¢ÃÂÃÂ new board expected by September.",
+        "nextAction": "Resume Q4. MMT IT rebuilding Jira project structure ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ new board expected by September.",
         "timeline": [
           {
             "id": "t5051",
