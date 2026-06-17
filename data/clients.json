@@ -1,160 +1,13 @@
 [
   {
-    "id": "c1",
-    "name": "PwC",
-    "description": "PricewaterhouseCoopers Ã¢ÂÂ HR transformation with D365 F&O and AD integrations",
-    "createdAt": "2025-01-10T09:00:00Z",
-    "integrations": [
-      {
-        "id": "i101",
-        "name": "Darwinbox Ã¢ÂÂ D365 F&O Employee Sync",
-        "status": "In Progress",
-        "assignee": "Yashwanth K",
-        "dueDate": "2025-07-31",
-        "description": "Full employee master sync from Darwinbox to Microsoft D365 Finance & Operations. Covers new hire, transfers, separations via OData batch API.",
-        "nextAction": "Complete UAT for separation scenario. Schedule go-live call with PwC HRMS team.",
-        "timeline": [
-          {
-            "id": "t1011",
-            "date": "2025-06-05",
-            "update": "OData batch endpoint configured. Employee create and update tested successfully in UAT. Separation scenario pending.",
-            "addedBy": "Yashwanth K",
-            "addedAt": "2025-06-05T11:30:00Z"
-          },
-          {
-            "id": "t1012",
-            "date": "2025-05-20",
-            "update": "BRD signed off by PwC HRMS lead. Development started on employee payload mapping. 42 fields mapped.",
-            "addedBy": "Yashwanth K",
-            "addedAt": "2025-05-20T14:00:00Z"
-          },
-          {
-            "id": "t1013",
-            "date": "2025-05-01",
-            "update": "Kickoff call completed. Access to D365 sandbox granted. API keys shared via secure channel.",
-            "addedBy": "Yashwanth K",
-            "addedAt": "2025-05-01T10:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "i102",
-        "name": "Darwinbox Leave Ã¢ÂÂ D365 Leave Sync",
-        "status": "At Risk",
-        "assignee": "Harsha",
-        "dueDate": "2025-07-15",
-        "description": "Bi-directional leave balance and transaction sync between Darwinbox and D365. Blocker: D365 leave schema mismatch with Darwinbox leave types.",
-        "nextAction": "Escalate schema mismatch to PwC D365 admin. Get mapping table approved before resuming dev.",
-        "timeline": [
-          {
-            "id": "t1021",
-            "date": "2025-06-08",
-            "update": "Critical blocker: PwC D365 has 14 custom leave types not present in Darwinbox. Mapping is ambiguous. Escalated to client.",
-            "addedBy": "Harsha",
-            "addedAt": "2025-06-08T16:00:00Z"
-          },
-          {
-            "id": "t1022",
-            "date": "2025-05-25",
-            "update": "Initial leave API testing done. Balance read works. Write endpoint returning 400 on custom leave types.",
-            "addedBy": "Harsha",
-            "addedAt": "2025-05-25T13:00:00Z"
-          },
-          {
-            "id": "t1023",
-            "date": "2025-05-10",
-            "update": "Scope document drafted. Leave types inventory collected from D365. Mismatch identified and documented.",
-            "addedBy": "Harsha",
-            "addedAt": "2025-05-10T10:30:00Z"
-          }
-        ]
-      },
-      {
-        "id": "i103",
-        "name": "Active Directory Provisioning",
-        "status": "Completed",
-        "assignee": "Bhalchandra",
-        "dueDate": "2025-05-30",
-        "description": "Auto-provision AD accounts for new hires from Darwinbox triggers. Includes group assignment based on department and location.",
-        "nextAction": "",
-        "timeline": [
-          {
-            "id": "t1031",
-            "date": "2025-05-28",
-            "update": "Go-live complete. 37 new hires provisioned in first week. Zero failures reported. Handover document shared with PwC IT.",
-            "addedBy": "Bhalchandra",
-            "addedAt": "2025-05-28T17:00:00Z"
-          },
-          {
-            "id": "t1032",
-            "date": "2025-05-12",
-            "update": "UAT passed. All 12 test cases green. PwC IT sign-off received.",
-            "addedBy": "Bhalchandra",
-            "addedAt": "2025-05-12T15:00:00Z"
-          },
-          {
-            "id": "t1033",
-            "date": "2025-04-20",
-            "update": "LDAP write connector built. Group policy mapping finalized for 8 departments.",
-            "addedBy": "Bhalchandra",
-            "addedAt": "2025-04-20T11:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "i104",
-        "name": "ServiceNow ITSM Integration",
-        "status": "Not Started",
-        "assignee": "Saiteja",
-        "dueDate": "2025-09-30",
-        "description": "Auto-raise ServiceNow IT tickets on new hire events in Darwinbox. Laptop, access card, and system access requests.",
-        "nextAction": "Collect ServiceNow instance details and API credentials from PwC IT. Set up dev environment.",
-        "timeline": [
-          {
-            "id": "t1041",
-            "date": "2025-06-01",
-            "update": "Added to Q3 roadmap. PwC IT POC identified Ã¢ÂÂ Rajesh Nair. Credentials request sent.",
-            "addedBy": "Saiteja",
-            "addedAt": "2025-06-01T09:00:00Z"
-          }
-        ]
-      },
-      {
-        "id": "i105",
-        "name": "Workday Compensation Sync",
-        "status": "On Hold",
-        "assignee": "Yashwanth K",
-        "dueDate": "2025-10-15",
-        "description": "Sync compensation bands and salary data from Workday into Darwinbox for unified reporting. On hold pending Workday license renewal at PwC.",
-        "nextAction": "Follow up on Workday license status in July. Resume planning once confirmed.",
-        "timeline": [
-          {
-            "id": "t1051",
-            "date": "2025-05-15",
-            "update": "Project paused. PwC Workday contract under renegotiation. Expected to resume Q3.",
-            "addedBy": "Yashwanth K",
-            "addedAt": "2025-05-15T12:00:00Z"
-          },
-          {
-            "id": "t1052",
-            "date": "2025-04-10",
-            "update": "Scoping call done. Workday SOAP API identified. High-level mapping completed.",
-            "addedBy": "Yashwanth K",
-            "addedAt": "2025-04-10T14:00:00Z"
-          }
-        ]
-      }
-    ]
-  },
-  {
     "id": "c2",
     "name": "Singlife",
-    "description": "Singlife Ã¢ÂÂ insurance company, Singapore. Payroll and SSO integrations in progress.",
+    "description": "Singlife ÃÂ¢ÃÂÃÂ insurance company, Singapore. Payroll and SSO integrations in progress.",
     "createdAt": "2025-01-15T09:00:00Z",
     "integrations": [
       {
         "id": "i201",
-        "name": "Payroll SFTP Ã¢ÂÂ Darwinbox to ADP",
+        "name": "Payroll SFTP ÃÂ¢ÃÂÃÂ Darwinbox to ADP",
         "status": "Completed",
         "assignee": "Harsha",
         "dueDate": "2025-04-30",
@@ -235,7 +88,7 @@
           {
             "id": "t2032",
             "date": "2025-04-28",
-            "update": "SAML metadata exchanged. UAT with 15 pilot users Ã¢ÂÂ all passed. MFA flow tested.",
+            "update": "SAML metadata exchanged. UAT with 15 pilot users ÃÂ¢ÃÂÃÂ all passed. MFA flow tested.",
             "addedBy": "Bhalchandra",
             "addedAt": "2025-04-28T14:00:00Z"
           },
@@ -267,7 +120,7 @@
           {
             "id": "t2041",
             "date": "2025-06-09",
-            "update": "Rate limit issue confirmed Ã¢ÂÂ Darwinbox API times out after 500 records. Pagination workaround being designed.",
+            "update": "Rate limit issue confirmed ÃÂ¢ÃÂÃÂ Darwinbox API times out after 500 records. Pagination workaround being designed.",
             "addedBy": "Yashwanth K",
             "addedAt": "2025-06-09T15:30:00Z"
           },
@@ -310,12 +163,12 @@
   {
     "id": "c3",
     "name": "CMA CGM",
-    "description": "CMA CGM Ã¢ÂÂ global shipping company. Oracle HCM, ADP Payroll, and Kronos WFM integrations.",
+    "description": "CMA CGM ÃÂ¢ÃÂÃÂ global shipping company. Oracle HCM, ADP Payroll, and Kronos WFM integrations.",
     "createdAt": "2025-02-01T09:00:00Z",
     "integrations": [
       {
         "id": "i301",
-        "name": "Darwinbox Ã¢ÂÂ Oracle HCM Sync",
+        "name": "Darwinbox ÃÂ¢ÃÂÃÂ Oracle HCM Sync",
         "status": "In Progress",
         "assignee": "Bhalchandra",
         "dueDate": "2025-08-31",
@@ -351,7 +204,7 @@
         "status": "On Hold",
         "assignee": "Saiteja",
         "dueDate": "2025-10-01",
-        "description": "Monthly payroll file delivery from Darwinbox to ADP Global Payroll for CMA CGM France entity. On hold Ã¢ÂÂ ADP contract renewal in progress.",
+        "description": "Monthly payroll file delivery from Darwinbox to ADP Global Payroll for CMA CGM France entity. On hold ÃÂ¢ÃÂÃÂ ADP contract renewal in progress.",
         "nextAction": "Track ADP contract status. Resume design once new contract confirmed.",
         "timeline": [
           {
@@ -400,7 +253,7 @@
           {
             "id": "t3041",
             "date": "2025-06-07",
-            "update": "OAuth token refresh failing after 1hr. Raised with Concur support Ã¢ÂÂ ticket #SCC-8847. Workaround: manual token re-auth every hour (not acceptable).",
+            "update": "OAuth token refresh failing after 1hr. Raised with Concur support ÃÂ¢ÃÂÃÂ ticket #SCC-8847. Workaround: manual token re-auth every hour (not acceptable).",
             "addedBy": "Harsha",
             "addedAt": "2025-06-07T16:00:00Z"
           },
@@ -426,7 +279,7 @@
         "status": "Completed",
         "assignee": "Bhalchandra",
         "dueDate": "2025-06-15",
-        "description": "One-way LDAP sync from Darwinbox to CMA CGM Active Directory for employee attribute updates Ã¢ÂÂ email, designation, department, manager.",
+        "description": "One-way LDAP sync from Darwinbox to CMA CGM Active Directory for employee attribute updates ÃÂ¢ÃÂÃÂ email, designation, department, manager.",
         "nextAction": "",
         "timeline": [
           {
@@ -457,12 +310,12 @@
   {
     "id": "c4",
     "name": "AU Bank",
-    "description": "AU Small Finance Bank Ã¢ÂÂ Finacle HRMS, D365 leave, and approver mapping integrations.",
+    "description": "AU Small Finance Bank ÃÂ¢ÃÂÃÂ Finacle HRMS, D365 leave, and approver mapping integrations.",
     "createdAt": "2025-02-15T09:00:00Z",
     "integrations": [
       {
         "id": "i401",
-        "name": "Finacle Ã¢ÂÂ Darwinbox Employee Sync",
+        "name": "Finacle ÃÂ¢ÃÂÃÂ Darwinbox Employee Sync",
         "status": "Completed",
         "assignee": "Saiteja",
         "dueDate": "2025-05-01",
@@ -501,7 +354,7 @@
       },
       {
         "id": "i402",
-        "name": "Darwinbox Leave Ã¢ÂÂ D365 F&O Sync",
+        "name": "Darwinbox Leave ÃÂ¢ÃÂÃÂ D365 F&O Sync",
         "status": "In Progress",
         "assignee": "Yashwanth K",
         "dueDate": "2025-07-31",
@@ -511,7 +364,7 @@
           {
             "id": "t4021",
             "date": "2025-06-10",
-            "update": "OData batch write working for leave balances. Testing leave cancellation reversal scenario Ã¢ÂÂ edge case identified.",
+            "update": "OData batch write working for leave balances. Testing leave cancellation reversal scenario ÃÂ¢ÃÂÃÂ edge case identified.",
             "addedBy": "Yashwanth K",
             "addedAt": "2025-06-10T14:30:00Z"
           },
@@ -537,7 +390,7 @@
         "status": "At Risk",
         "assignee": "Harsha",
         "dueDate": "2025-07-15",
-        "description": "Sync appraisal ratings from AU Bank internal tool into Darwinbox for performance module. Blocked by internal tool API being deprecated Ã¢ÂÂ migration underway.",
+        "description": "Sync appraisal ratings from AU Bank internal tool into Darwinbox for performance module. Blocked by internal tool API being deprecated ÃÂ¢ÃÂÃÂ migration underway.",
         "nextAction": "Wait for AU Bank IT to confirm new appraisal tool API. Escalated to project manager.",
         "timeline": [
           {
@@ -550,7 +403,7 @@
           {
             "id": "t4032",
             "date": "2025-05-20",
-            "update": "Initial API exploration done. Appraisal data model documented. API deprecation notice received from AU Bank IT Ã¢ÂÂ escalated.",
+            "update": "Initial API exploration done. Appraisal data model documented. API deprecation notice received from AU Bank IT ÃÂ¢ÃÂÃÂ escalated.",
             "addedBy": "Harsha",
             "addedAt": "2025-05-20T12:00:00Z"
           }
@@ -618,17 +471,17 @@
   {
     "id": "c5",
     "name": "MakeMyTrip",
-    "description": "MakeMyTrip Ã¢ÂÂ India's leading travel platform. BambooHR, Salesforce, and Slack integrations.",
+    "description": "MakeMyTrip ÃÂ¢ÃÂÃÂ India's leading travel platform. BambooHR, Salesforce, and Slack integrations.",
     "createdAt": "2025-03-01T09:00:00Z",
     "integrations": [
       {
         "id": "i501",
-        "name": "BambooHR Ã¢ÂÂ Darwinbox Sync",
+        "name": "BambooHR ÃÂ¢ÃÂÃÂ Darwinbox Sync",
         "status": "In Progress",
         "assignee": "Harsha",
         "dueDate": "2025-08-15",
         "description": "Migrate and sync employee data from BambooHR into Darwinbox as MMT consolidates HR systems. One-time migration + ongoing delta sync.",
-        "nextAction": "Complete data cleansing on BambooHR export. 340 records have missing manager IDs Ã¢ÂÂ flagged to MMT HR.",
+        "nextAction": "Complete data cleansing on BambooHR export. 340 records have missing manager IDs ÃÂ¢ÃÂÃÂ flagged to MMT HR.",
         "timeline": [
           {
             "id": "t5011",
@@ -715,14 +568,14 @@
           {
             "id": "t5041",
             "date": "2025-06-09",
-            "update": "Salesforce Shield encryption enabled on target fields Ã¢ÂÂ API writes now failing with FIELD_INTEGRITY_EXCEPTION. Escalated to MMT SF admin.",
+            "update": "Salesforce Shield encryption enabled on target fields ÃÂ¢ÃÂÃÂ API writes now failing with FIELD_INTEGRITY_EXCEPTION. Escalated to MMT SF admin.",
             "addedBy": "Saiteja",
             "addedAt": "2025-06-09T15:00:00Z"
           },
           {
             "id": "t5042",
             "date": "2025-05-30",
-            "update": "Salesforce Connected App set up. OAuth working. Write to standard Contact object successful. Custom field writes failing Ã¢ÂÂ encryption issue found.",
+            "update": "Salesforce Connected App set up. OAuth working. Write to standard Contact object successful. Custom field writes failing ÃÂ¢ÃÂÃÂ encryption issue found.",
             "addedBy": "Saiteja",
             "addedAt": "2025-05-30T13:00:00Z"
           },
@@ -742,7 +595,7 @@
         "assignee": "Harsha",
         "dueDate": "2025-10-01",
         "description": "Auto-create Jira IT tickets when Darwinbox onboarding tasks trigger hardware/software requests at MMT.",
-        "nextAction": "Resume Q4. MMT IT rebuilding Jira project structure Ã¢ÂÂ new board expected by September.",
+        "nextAction": "Resume Q4. MMT IT rebuilding Jira project structure ÃÂ¢ÃÂÃÂ new board expected by September.",
         "timeline": [
           {
             "id": "t5051",
