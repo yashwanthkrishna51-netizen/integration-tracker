@@ -30,7 +30,7 @@
         "assignee": "Yashwanth",
         "dueDate": "2026-06-30",
         "description": "One Way SFTP data flow for employee data from DB to ITP.",
-        "nextAction": "",
+        "nextAction": "Client to share sample file, naming convention and SFTP details for us to scope",
         "timeline": []
       }
     ]
