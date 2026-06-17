@@ -8,26 +8,37 @@
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+*{font-family:'Poppins',sans-serif}
 [data-act]{cursor:pointer}
 .fade{animation:fi .15s ease}
 @keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.sidebar-scroll::-webkit-scrollbar{width:5px}
+.sidebar-scroll::-webkit-scrollbar-thumb{background:#1a6b8a40;border-radius:4px}
+th[data-sort]:hover{background:#f0f7f9}
+.brand-k{color:#0e7490}
+.brand-dot{color:#b5179e}
 </style>
 </head>
-<body class="bg-gray-50 text-gray-900 font-sans">
+<body class="bg-[#f5f9fa] text-gray-900">
 <div id="app"></div>
 <script>
 // ─── STATE ────────────────────────────────────────────────────────
-const S={user:null,clients:[],users:[],shas:{clients:null,users:null},sessionToken:null,view:'login',params:{},adminTab:'clients',filter:'all',search:'',modal:null,toast:null};
+const S={user:null,clients:[],users:[],shas:{clients:null,users:null},sessionToken:null,view:'login',params:{},adminTab:'clients',filter:'all',search:'',modal:null,toast:null,sidebarCollapsed:false,sidebarClientsOpen:true,sort:{key:'name',dir:'asc'}};
 
-// ─── CONSTANTS ────────────────────────────────────────────────────
+try{S.sidebarCollapsed=localStorage.getItem('itk_sb_collapsed')==='1';}catch(e){}
+
+// ─── CONSTANTS — KOGNOZ BRAND ─────────────────────────────────────
 const STATUSES=['Not Started','In Progress','At Risk','On Hold','Completed'];
 const ROLES=['viewer','editor','admin'];
-const SBG={'Completed':'bg-green-100 text-green-700 border border-green-200','In Progress':'bg-blue-100 text-blue-700 border border-blue-200','At Risk':'bg-red-100 text-red-700 border border-red-200','On Hold':'bg-amber-100 text-amber-700 border border-amber-200','Not Started':'bg-gray-100 text-gray-500 border border-gray-200'};
-const SDOT={'Completed':'bg-green-500','In Progress':'bg-blue-500','At Risk':'bg-red-500','On Hold':'bg-amber-400','Not Started':'bg-gray-400'};
-const SHEX={'Completed':'22c55e','In Progress':'3b82f6','At Risk':'ef4444','On Hold':'f59e0b','Not Started':'9ca3af'};
-const SRGB={'Completed':[34,197,94],'In Progress':[59,130,246],'At Risk':[239,68,68],'On Hold':[245,158,11],'Not Started':[156,163,175]};
-const NAVY='1e3a8a';
+const TEAL='0e7490',TEAL_DARK='0d3d4f',MAGENTA='b5179e',VIOLET='7c3aed';
+const SBG={'Completed':'bg-green-100 text-green-700 border border-green-200','In Progress':'bg-cyan-100 text-cyan-800 border border-cyan-200','At Risk':'bg-rose-100 text-rose-700 border border-rose-200','On Hold':'bg-violet-100 text-violet-700 border border-violet-200','Not Started':'bg-gray-100 text-gray-500 border border-gray-200'};
+const SDOT={'Completed':'bg-green-500','In Progress':'bg-cyan-600','At Risk':'bg-rose-600','On Hold':'bg-violet-500','Not Started':'bg-gray-400'};
+const SHEX={'Completed':'22c55e','In Progress':'0e7490','At Risk':'be185d','On Hold':'7c3aed','Not Started':'64748b'};
+const SRGB={'Completed':[34,197,94],'In Progress':[14,116,144],'At Risk':[190,24,93],'On Hold':[124,58,237],'Not Started':[100,116,139]};
 
 // ─── UTILS ────────────────────────────────────────────────────────
 async function sha256(str){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');}
@@ -35,13 +46,21 @@ function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function fmtDate(s){if(!s)return'—';try{return new Date(s).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});}catch{return s;}}
 function can(p){if(!S.user)return false;const r={admin:3,editor:2,viewer:1};return(r[S.user.role]||0)>=(r[p]||0);}
-function navigate(view,params={}){S.view=view;S.params=params;S.filter='all';S.search='';S.modal=null;render();}
+function navigate(view,params={}){S.view=view;S.params=params;S.filter='all';S.search='';S.modal=null;S.sort={key:'name',dir:'asc'};render();}
+function todayStr(){return new Date().toISOString().slice(0,10);}
+function daysDiff(dateStr){if(!dateStr)return null;const d=new Date(dateStr+'T00:00:00');const t=new Date(todayStr()+'T00:00:00');return Math.round((t-d)/86400000);}
+function isOverdue(i){if(i.status==='Completed'||!i.dueDate)return false;return daysDiff(i.dueDate)>0;}
+function daysOverdue(i){return daysDiff(i.dueDate);}
+function lastUpdateDate(i){return i.timeline?.[0]?.date||null;}
+function isStale(i,days=7){if(i.status==='Completed')return false;const lu=lastUpdateDate(i);if(!lu)return true;return daysDiff(lu)>=days;}
+function overdueBadge(i){if(!isOverdue(i))return'';const d=daysOverdue(i);return`<span class="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">⏰ ${d}d overdue</span>`;}
+function healthColor(c){const ar=c.integrations.filter(i=>i.status==='At Risk').length;const od=c.integrations.filter(isOverdue).length;if(ar>0||od>0)return'bg-rose-500';const oh=c.integrations.filter(i=>i.status==='On Hold').length;if(oh>0)return'bg-violet-400';return'bg-green-500';}
 
 let _tt;
 function showToast(msg,type='success'){
   S.toast={msg,type};
   const el=document.getElementById('toast');
-  const c={success:'bg-green-600',error:'bg-red-600',info:'bg-blue-700',warn:'bg-amber-600'};
+  const c={success:'bg-green-600',error:'bg-rose-600',info:'bg-[#0e7490]',warn:'bg-amber-600'};
   if(el){el.className=`fixed bottom-5 right-5 z-[100] ${c[type]||c.info} text-white text-sm font-medium px-4 py-3 rounded-xl shadow-xl fade`;el.textContent=msg;el.style.display='block';}
   else{const d=document.createElement('div');d.id='toast';d.className=`fixed bottom-5 right-5 z-[100] ${c[type]||c.info} text-white text-sm font-medium px-4 py-3 rounded-xl shadow-xl fade`;d.textContent=msg;document.body.appendChild(d);}
   if(_tt)clearTimeout(_tt);_tt=setTimeout(()=>{const x=document.getElementById('toast');if(x)x.style.display='none';},3500);
@@ -68,55 +87,159 @@ function sbadge(s){return`<span class="inline-flex text-xs font-semibold px-2.5 
 function sBar(integs){if(!integs.length)return'';const c={};integs.forEach(i=>c[i.status]=(c[i.status]||0)+1);return Object.entries(c).map(([s,n])=>`<div class="h-1.5 ${SDOT[s]||'bg-gray-400'} rounded" style="width:${Math.round(n/integs.length*100)}%"></div>`).join('');}
 function sCounts(integs){const c={};integs.forEach(i=>c[i.status]=(c[i.status]||0)+1);return Object.entries(c).map(([s,n])=>`<span class="flex items-center gap-1 text-xs text-gray-500"><span class="w-2 h-2 inline-block rounded-full ${SDOT[s]||'bg-gray-400'}"></span>${n} ${esc(s)}</span>`).join('');}
 
+// ─── BRAND WORDMARK ───────────────────────────────────────────────
+function brandMark(big){
+  const sz=big?'text-2xl':'text-lg';
+  return`<div class="flex flex-col leading-none">
+    <span class="${sz} font-extrabold tracking-tight"><span class="brand-k">kognoz</span></span>
+    <span class="text-[10px] font-medium text-gray-400 tracking-wide -mt-0.5">INTEGTRACK</span>
+  </div>`;
+}
+
 // ─── RENDER ───────────────────────────────────────────────────────
 function render(){
   const app=document.getElementById('app');
   if(S.view==='login'){app.innerHTML=renderLogin();return;}
   let content='';
-  if(S.view==='clients')content=renderClientList();
+  if(S.view==='dashboard')content=renderDashboard();
+  else if(S.view==='clients')content=renderClientList();
   else if(S.view==='client-detail')content=renderClientDetail(S.params.clientId);
   else if(S.view==='integ-detail')content=renderIntegDetail(S.params.clientId,S.params.integId);
-  else if(S.view==='admin')content=can('admin')?renderAdmin():`<div class="p-8 text-red-500">Access denied</div>`;
-  app.innerHTML=`${renderNav()}<main class="pt-14 min-h-screen">${content}</main>${S.modal?renderModal():''}`;
+  else if(S.view==='admin')content=can('admin')?renderAdmin():`<div class="p-8 text-rose-500">Access denied</div>`;
+  const sbw=S.sidebarCollapsed?'4.2rem':'15.5rem';
+  app.innerHTML=`${renderSidebar()}<main class="min-h-screen transition-all" style="margin-left:${sbw}">${content}</main>${S.modal?renderModal():''}`;
 }
 
-function renderNav(){
-  const al=v=>(S.view===v||(['clients','client-detail','integ-detail'].includes(S.view)&&v==='clients'))?'text-blue-900 font-semibold border-b-2 border-blue-900':'text-gray-500 hover:text-gray-800';
-  return`<nav class="fixed top-0 inset-x-0 bg-white border-b border-gray-200 z-50 h-14">
-  <div class="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
-    <div class="flex items-center gap-6">
-      <span class="font-bold text-blue-900 text-lg flex items-center gap-1.5">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>IntegTrack</span>
-      <button data-act="nav-clients" class="${al('clients')} text-sm transition-colors pb-px">Clients</button>
-      ${can('admin')?`<button data-act="nav-admin" class="${al('admin')} text-sm transition-colors pb-px">Admin</button>`:''}
-    </div>
-    <div class="flex items-center gap-3">
-      <span class="text-sm text-gray-700 hidden sm:inline">${esc(S.user?.name)}</span>
-      <span class="text-xs px-2 py-0.5 rounded-full font-medium ${S.user?.role==='admin'?'bg-purple-100 text-purple-700':S.user?.role==='editor'?'bg-blue-100 text-blue-700':'bg-gray-100 text-gray-600'} capitalize">${esc(S.user?.role)}</span>
-      <button data-act="logout" class="text-xs text-gray-400 hover:text-red-500 transition-colors">Sign out</button>
-    </div>
+function renderSidebar(){
+  const collapsed=S.sidebarCollapsed;
+  const w=collapsed?'4.2rem':'15.5rem';
+  const isActive=v=>['clients','client-detail','integ-detail'].includes(S.view)&&v==='clients'?S.view!=='dashboard'&&S.view!=='admin':S.view===v;
+  const navItem=(view,label,icon,extra='')=>`<button data-act="nav-${view}" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${isActive(view)?'bg-[#0e7490] text-white shadow-sm':'text-gray-600 hover:bg-[#0e7490]/10'} ${extra}">
+    <span class="shrink-0">${icon}</span>${collapsed?'':`<span class="truncate">${label}</span>`}
+  </button>`;
+  return`<aside class="fixed inset-y-0 left-0 bg-white border-r border-gray-100 z-40 flex flex-col transition-all" style="width:${w}">
+  <div class="flex items-center ${collapsed?'justify-center':'justify-between'} px-4 h-16 border-b border-gray-100 shrink-0">
+    ${collapsed?`<span class="text-xl font-extrabold brand-k">k</span>`:brandMark(true)}
   </div>
-</nav>`;
+  <nav class="flex-1 overflow-y-auto sidebar-scroll px-2.5 py-4 space-y-1">
+    ${navItem('dashboard','Dashboard',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10M9 21h6"/></svg>`)}
+    ${navItem('clients','All Clients',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2M5 21H3m4-14h10M7 11h10M7 15h6"/></svg>`)}
+    ${!collapsed?`<div class="pt-2">
+      <button data-act="toggle-clients-list" class="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide hover:text-gray-600">
+        <span>Clients</span><span class="transition-transform ${S.sidebarClientsOpen?'rotate-90':''}">›</span>
+      </button>
+      ${S.sidebarClientsOpen?`<div class="space-y-0.5 mt-1">${S.clients.map(c=>`<button data-act="open-client" data-id="${c.id}" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition ${S.params.clientId===c.id?'bg-[#0e7490]/10 text-[#0e7490]':'text-gray-500 hover:bg-gray-50'}">
+        <span class="w-1.5 h-1.5 rounded-full shrink-0 ${healthColor(c)}"></span><span class="truncate">${esc(c.name)}</span>
+      </button>`).join('')}</div>`:''}
+    </div>`:''}
+    ${can('admin')?navItem('admin','Admin',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`,'mt-2'):''}
+  </nav>
+  <div class="border-t border-gray-100 p-2.5 shrink-0">
+    ${!collapsed?`<div class="flex items-center gap-2 px-2 py-2 mb-1">
+      <div class="w-8 h-8 rounded-full bg-[#0e7490] text-white flex items-center justify-center text-xs font-bold shrink-0">${esc((S.user?.name||'?')[0])}</div>
+      <div class="min-w-0 flex-1">
+        <div class="text-xs font-semibold text-gray-800 truncate">${esc(S.user?.name)}</div>
+        <div class="text-[10px] text-gray-400 capitalize">${esc(S.user?.role)}</div>
+      </div>
+    </div>`:''}
+    <button data-act="logout" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition ${collapsed?'justify-center':''}">
+      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>${collapsed?'':'Sign out'}
+    </button>
+    <button data-act="toggle-sidebar" class="w-full flex items-center justify-center gap-2 px-3 py-2 mt-1 rounded-lg text-xs text-gray-300 hover:text-gray-500 hover:bg-gray-50 transition">
+      <svg class="w-4 h-4 transition-transform ${collapsed?'rotate-180':''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/></svg>
+    </button>
+  </div>
+</aside>`;
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────
 function renderLogin(){
-  return`<div class="min-h-screen bg-gradient-to-br from-blue-950 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
+  return`<div class="min-h-screen bg-gradient-to-br from-[#0d3d4f] via-[#0e7490] to-[#0d3d4f] flex items-center justify-center p-4">
   <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm fade">
     <div class="text-center mb-8">
-      <div class="w-12 h-12 bg-blue-900 rounded-2xl flex items-center justify-center mx-auto mb-3">
-        <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      <div class="inline-flex flex-col items-center mb-3">
+        <span class="text-3xl font-extrabold"><span class="brand-k">kognoz</span></span>
+        <span class="text-[11px] font-medium text-gray-400 tracking-wide">INTEGTRACK</span>
       </div>
-      <h1 class="text-xl font-bold text-blue-900">IntegTrack</h1>
-      <p class="text-xs text-gray-400 mt-0.5">Kognoz · Integration Management</p>
+      <p class="text-xs text-gray-400 mt-2">Integration &amp; Client Management</p>
     </div>
     <div class="space-y-4">
       <div><label class="block text-xs font-medium text-gray-500 mb-1.5">Username</label>
-        <input id="lu" type="text" autocomplete="username" placeholder="username" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
+        <input id="lu" type="text" autocomplete="username" placeholder="username" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1.5">Password</label>
-        <input id="lp" type="password" autocomplete="current-password" placeholder="••••••••" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/></div>
-      <div id="lerr" class="hidden text-xs text-red-500 text-center bg-red-50 py-2 rounded-lg px-3"></div>
-      <button data-act="login" class="w-full bg-blue-900 text-white font-semibold rounded-xl py-2.5 text-sm hover:bg-blue-800 transition-colors">Sign In</button>
+        <input id="lp" type="password" autocomplete="current-password" placeholder="••••••••" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div id="lerr" class="hidden text-xs text-rose-500 text-center bg-rose-50 py-2 rounded-lg px-3"></div>
+      <button data-act="login" class="w-full bg-[#0e7490] text-white font-semibold rounded-xl py-2.5 text-sm hover:bg-[#0d3d4f] transition-colors">Sign In</button>
+    </div>
+  </div>
+</div>`;
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────────
+function renderDashboard(){
+  const all=S.clients.flatMap(c=>c.integrations.map(i=>({...i,clientName:c.name,clientId:c.id})));
+  const ti=all.length;
+  const ar=all.filter(i=>i.status==='At Risk').length;
+  const ip=all.filter(i=>i.status==='In Progress').length;
+  const co=all.filter(i=>i.status==='Completed').length;
+  const overdue=all.filter(isOverdue);
+  const stale=all.filter(i=>isStale(i,7)&&!isOverdue(i));
+  const weekAgo=new Date(Date.now()-7*86400000);
+  const thisWeekUpdates=all.reduce((n,i)=>n+(i.timeline||[]).filter(t=>new Date(t.date)>=weekAgo).length,0);
+  const needsAttn=[...overdue.map(i=>({...i,reason:'overdue'})),...stale.map(i=>({...i,reason:'stale'}))].sort((a,b)=>(a.reason==='overdue'&&b.reason!=='overdue')?-1:1);
+
+  return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
+  <h1 class="text-2xl font-bold text-gray-900 mb-1">Dashboard</h1>
+  <p class="text-sm text-gray-400 mb-6">Overview across all clients and integrations</p>
+
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+    ${[['Clients',S.clients.length,'text-[#0e7490]','bg-[#0e7490]/10'],['Total Integrations',ti,'text-gray-700','bg-gray-100'],['In Progress',ip,'text-[#0e7490]','bg-cyan-50'],['At Risk',ar,'text-rose-600','bg-rose-50'],['Updates this week',thisWeekUpdates,'text-violet-600','bg-violet-50']]
+    .map(([l,v,tc,bg])=>`<div class="${bg} rounded-2xl p-4"><div class="text-2xl font-bold ${tc}">${v}</div><div class="text-xs text-gray-500 mt-0.5">${l}</div></div>`).join('')}
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+    <div class="bg-white rounded-2xl border border-gray-100 p-5">
+      <h3 class="font-semibold text-gray-900 text-sm mb-4 flex items-center gap-2">⚠️ Needs Attention <span class="text-xs font-normal text-gray-400">(${needsAttn.length})</span></h3>
+      <div class="space-y-2 max-h-80 overflow-y-auto pr-1">
+        ${needsAttn.length?needsAttn.slice(0,12).map(i=>`<div data-act="open-integ" data-cid="${i.clientId}" data-iid="${i.id}" class="flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-gray-50 cursor-pointer border border-gray-50">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-medium text-gray-800 truncate">${esc(i.name)}</div>
+            <div class="text-xs text-gray-400">${esc(i.clientName)} · ${esc(i.assignee||'Unassigned')}</div>
+          </div>
+          ${i.reason==='overdue'?overdueBadge(i):`<span class="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full whitespace-nowrap">No update ${lastUpdateDate(i)?daysDiff(lastUpdateDate(i))+'d':''}</span>`}
+        </div>`).join(''):`<p class="text-sm text-gray-400 text-center py-8">All caught up — nothing overdue or stale 🎉</p>`}
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-gray-100 p-5">
+      <h3 class="font-semibold text-gray-900 text-sm mb-4">Status by Client</h3>
+      <div class="space-y-3.5 max-h-80 overflow-y-auto pr-1">
+        ${S.clients.map(c=>{
+          const tot=c.integrations.length||1;
+          return`<div data-act="open-client" data-id="${c.id}" class="cursor-pointer group">
+            <div class="flex items-center justify-between text-xs mb-1">
+              <span class="font-medium text-gray-700 group-hover:text-[#0e7490] truncate">${esc(c.name)}</span>
+              <span class="text-gray-400">${c.integrations.length}</span>
+            </div>
+            <div class="flex gap-0.5 h-2.5 rounded-full overflow-hidden bg-gray-100">
+              ${STATUSES.map(s=>{const n=c.integrations.filter(i=>i.status===s).length;return n?`<div class="${SDOT[s]}" style="width:${Math.round(n/tot*100)}%" title="${s}: ${n}"></div>`:'';}).join('')}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="flex flex-wrap gap-3 mt-4 pt-3 border-t border-gray-50">
+        ${STATUSES.map(s=>`<span class="flex items-center gap-1.5 text-xs text-gray-500"><span class="w-2.5 h-2.5 rounded-full ${SDOT[s]}"></span>${s}</span>`).join('')}
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-gray-100 p-5">
+    <h3 class="font-semibold text-gray-900 text-sm mb-4">Overall Status Distribution</h3>
+    <div class="flex gap-1.5 h-4 rounded-full overflow-hidden bg-gray-100 mb-3">
+      ${STATUSES.map(s=>{const n=all.filter(i=>i.status===s).length;return n?`<div class="${SDOT[s]}" style="width:${Math.round(n/(ti||1)*100)}%" title="${s}: ${n}"></div>`:'';}).join('')}
+    </div>
+    <div class="flex flex-wrap gap-4">
+      ${STATUSES.map(s=>{const n=all.filter(i=>i.status===s).length;return`<span class="flex items-center gap-1.5 text-xs text-gray-600"><span class="w-2.5 h-2.5 rounded-full ${SDOT[s]}"></span>${s}: <b>${n}</b></span>`;}).join('')}
     </div>
   </div>
 </div>`;
@@ -129,46 +252,66 @@ function renderClientList(){
   const ti=S.clients.reduce((a,c)=>a+c.integrations.length,0);
   const ar=S.clients.reduce((a,c)=>a+c.integrations.filter(i=>i.status==='At Risk').length,0);
   const ip=S.clients.reduce((a,c)=>a+c.integrations.filter(i=>i.status==='In Progress').length,0);
-  const co=S.clients.reduce((a,c)=>a+c.integrations.filter(i=>i.status==='Completed').length,0);
-  return`<div class="max-w-7xl mx-auto px-4 py-6 fade">
+  return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
   <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-    ${[['Clients',S.clients.length,'text-blue-900','bg-blue-50'],['Total Integrations',ti,'text-indigo-700','bg-indigo-50'],['In Progress',ip,'text-blue-600','bg-blue-50'],['At Risk',ar,'text-red-600','bg-red-50']].map(([l,v,tc,bg])=>`<div class="${bg} rounded-xl p-4"><div class="text-2xl font-bold ${tc}">${v}</div><div class="text-xs text-gray-500 mt-0.5">${l}</div></div>`).join('')}
+    ${[['Clients',S.clients.length,'text-[#0e7490]','bg-[#0e7490]/10'],['Total Integrations',ti,'text-gray-700','bg-gray-100'],['In Progress',ip,'text-[#0e7490]','bg-cyan-50'],['At Risk',ar,'text-rose-600','bg-rose-50']].map(([l,v,tc,bg])=>`<div class="${bg} rounded-2xl p-4"><div class="text-2xl font-bold ${tc}">${v}</div><div class="text-xs text-gray-500 mt-0.5">${l}</div></div>`).join('')}
   </div>
   <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
     <h1 class="text-xl font-bold text-gray-900">Clients</h1>
-    <input id="search-inp" data-act="search" type="text" placeholder="Search clients…" value="${esc(S.search)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+    <input id="search-inp" data-act="search" type="text" placeholder="Search clients…" value="${esc(S.search)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
   </div>
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
     ${fl.length?fl.map(c=>{
       const ar2=c.integrations.filter(i=>i.status==='At Risk').length;
-      return`<div data-act="open-client" data-id="${c.id}" class="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md hover:border-blue-100 transition cursor-pointer">
-        <div class="flex items-start justify-between mb-3">
+      const od2=c.integrations.filter(isOverdue).length;
+      return`<div data-act="open-client" data-id="${c.id}" class="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md hover:border-[#0e7490]/30 transition cursor-pointer relative overflow-hidden">
+        <div class="absolute left-0 top-0 bottom-0 w-1 ${healthColor(c)}"></div>
+        <div class="flex items-start justify-between mb-3 pl-1.5">
           <div class="flex-1 min-w-0 pr-2"><div class="font-semibold text-gray-900">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 mt-0.5 truncate">${esc(c.description)}</div>`:''}</div>
-          <span class="text-2xl font-bold text-blue-900 opacity-60 shrink-0">${c.integrations.length}</span>
+          <span class="text-2xl font-bold text-[#0e7490] opacity-60 shrink-0">${c.integrations.length}</span>
         </div>
-        <div class="flex gap-1 mb-3 h-1.5">${sBar(c.integrations)}</div>
-        <div class="flex flex-wrap gap-x-3 gap-y-1 mb-2">${sCounts(c.integrations)}</div>
-        ${ar2>0?`<div class="mt-2 text-xs font-medium text-red-600 bg-red-50 rounded-lg px-2.5 py-1 inline-block">⚠ ${ar2} at risk</div>`:''}
+        <div class="flex gap-1 mb-3 h-1.5 pl-1.5">${sBar(c.integrations)}</div>
+        <div class="flex flex-wrap gap-x-3 gap-y-1 mb-2 pl-1.5">${sCounts(c.integrations)}</div>
+        <div class="flex gap-2 pl-1.5 mt-2">
+          ${ar2>0?`<span class="text-xs font-medium text-rose-600 bg-rose-50 rounded-lg px-2.5 py-1 inline-block">⚠ ${ar2} at risk</span>`:''}
+          ${od2>0?`<span class="text-xs font-medium text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1 inline-block">⏰ ${od2} overdue</span>`:''}
+        </div>
       </div>`;
     }).join(''):`<div class="col-span-3 text-center py-16 text-gray-400">No clients match "${esc(S.search)}"</div>`}
   </div>
 </div>`;
 }
 
-// ─── CLIENT DETAIL ────────────────────────────────────────────────
+// ─── CLIENT DETAIL (sortable table) ──────────────────────────────
+function sortIntegs(list){
+  const{key,dir}=S.sort;const m=dir==='asc'?1:-1;
+  return[...list].sort((a,b)=>{
+    let av,bv;
+    if(key==='due'){av=a.dueDate||'9999';bv=b.dueDate||'9999';}
+    else if(key==='lastUpdate'){av=lastUpdateDate(a)||'0000';bv=lastUpdateDate(b)||'0000';}
+    else if(key==='status'){av=a.status;bv=b.status;}
+    else if(key==='assignee'){av=a.assignee||'';bv=b.assignee||'';}
+    else{av=a.name;bv=b.name;}
+    return av<bv?-1*m:av>bv?1*m:0;
+  });
+}
+function sortArrow(key){if(S.sort.key!==key)return'<span class="text-gray-300">↕</span>';return S.sort.dir==='asc'?'<span class="text-[#0e7490]">↑</span>':'<span class="text-[#0e7490]">↓</span>';}
+
 function renderClientDetail(clientId){
   const c=S.clients.find(x=>x.id===clientId);
   if(!c)return`<div class="p-8 text-gray-400">Client not found</div>`;
   const fl=S.filter==='all'?c.integrations:c.integrations.filter(i=>i.status===S.filter);
-  return`<div class="max-w-7xl mx-auto px-4 py-6 fade">
+  const sorted=sortIntegs(fl);
+  const cols=[['name','Integration'],['status','Status'],['assignee','Assignee'],['due','Due Date'],['lastUpdate','Last Update']];
+  return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
   <div class="flex items-center gap-2 text-sm text-gray-400 mb-4">
-    <button data-act="nav-clients" class="hover:text-blue-900">Clients</button><span>›</span>
+    <button data-act="nav-clients" class="hover:text-[#0e7490]">Clients</button><span>›</span>
     <span class="text-gray-900 font-medium">${esc(c.name)}</span>
   </div>
   <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
     <div><h1 class="text-xl font-bold text-gray-900">${esc(c.name)}</h1>${c.description?`<p class="text-sm text-gray-400 mt-0.5">${esc(c.description)}</p>`:''}</div>
     <div class="relative group">
-      <button class="flex items-center gap-1.5 bg-blue-900 text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-blue-800 transition">
+      <button class="flex items-center gap-1.5 bg-[#0e7490] text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Export ▾
       </button>
       <div class="absolute right-0 top-full mt-1 bg-white border border-gray-100 rounded-xl shadow-xl w-44 py-1 hidden group-hover:block z-10">
@@ -178,24 +321,26 @@ function renderClientDetail(clientId){
     </div>
   </div>
   <div class="flex gap-2 overflow-x-auto pb-1 mb-5 items-center">
-    ${['all',...STATUSES].map(st=>`<button data-act="filter" data-filter="${st}" class="whitespace-nowrap text-xs font-medium px-3 py-1.5 rounded-full transition ${S.filter===st?'bg-blue-900 text-white':'bg-white border border-gray-200 text-gray-600 hover:border-blue-300'}">${st==='all'?`All (${c.integrations.length})`:esc(st)+` (${c.integrations.filter(i=>i.status===st).length})`}</button>`).join('')}
+    ${['all',...STATUSES].map(st=>`<button data-act="filter" data-filter="${st}" class="whitespace-nowrap text-xs font-medium px-3 py-1.5 rounded-full transition ${S.filter===st?'bg-[#0e7490] text-white':'bg-white border border-gray-200 text-gray-600 hover:border-[#0e7490]/40'}">${st==='all'?`All (${c.integrations.length})`:esc(st)+` (${c.integrations.filter(i=>i.status===st).length})`}</button>`).join('')}
     ${can('admin')?`<button data-act="modal-open" data-modal="add-integ" data-cid="${c.id}" class="whitespace-nowrap text-xs font-medium px-3 py-1.5 rounded-full bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 ml-auto">+ Add Integration</button>`:''}
   </div>
-  <div class="space-y-3">
-    ${fl.length?fl.map(i=>{const last=i.timeline?.[0];return`<div data-act="open-integ" data-cid="${c.id}" data-iid="${i.id}" class="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md hover:border-blue-100 transition cursor-pointer">
-      <div class="flex items-start justify-between gap-3">
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 flex-wrap mb-1"><span class="font-medium text-gray-900">${esc(i.name)}</span>${sbadge(i.status)}</div>
-          ${i.description?`<p class="text-xs text-gray-500 truncate mb-2">${esc(i.description)}</p>`:''}
-          <div class="flex flex-wrap gap-4 text-xs text-gray-400">
-            ${i.assignee?`<span>👤 ${esc(i.assignee)}</span>`:''}
-            ${i.dueDate?`<span>📅 ${fmtDate(i.dueDate)}</span>`:''}
-            ${i.timeline?.length?`<span>🕐 ${i.timeline.length} update${i.timeline.length>1?'s':''}</span>`:''}
-          </div>
-        </div>
-        ${last?`<div class="hidden md:block text-xs text-gray-400 text-right max-w-xs shrink-0"><div class="font-medium text-gray-600 mb-1">Latest</div><div class="line-clamp-2">${esc(last.update)}</div><div class="mt-1">${fmtDate(last.date)}</div></div>`:''}
-      </div>
-    </div>`;}).join(''):`<div class="text-center py-12 text-gray-400 text-sm">No integrations match this filter</div>`}
+  <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="border-b border-gray-100 bg-gray-50">
+        <tr>${cols.map(([k,l])=>`<th data-act="sort" data-key="${k}" data-sort class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer transition select-none">${l} ${sortArrow(k)}</th>`).join('')}</tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50">
+        ${sorted.length?sorted.map(i=>{
+          const lu=lastUpdateDate(i);
+          return`<tr data-act="open-integ" data-cid="${c.id}" data-iid="${i.id}" class="hover:bg-gray-50/60 cursor-pointer transition">
+          <td class="px-4 py-3"><div class="font-medium text-gray-900">${esc(i.name)}</div>${i.description?`<div class="text-xs text-gray-400 truncate max-w-xs">${esc(i.description)}</div>`:''}</td>
+          <td class="px-4 py-3">${sbadge(i.status)}</td>
+          <td class="px-4 py-3 text-gray-600">${esc(i.assignee||'—')}</td>
+          <td class="px-4 py-3"><div class="flex flex-col gap-1"><span class="text-gray-600">${fmtDate(i.dueDate)}</span>${overdueBadge(i)}</div></td>
+          <td class="px-4 py-3 text-gray-500">${lu?fmtDate(lu):'<span class="text-amber-600 text-xs font-medium">No updates</span>'}</td>
+        </tr>`;}).join(''):`<tr><td colspan="5" class="text-center py-12 text-gray-400 text-sm">No integrations match this filter</td></tr>`}
+      </tbody>
+    </table>
   </div>
 </div>`;
 }
@@ -205,40 +350,41 @@ function renderIntegDetail(clientId,integId){
   const c=S.clients.find(x=>x.id===clientId);
   const i=c?.integrations.find(x=>x.id===integId);
   if(!c||!i)return`<div class="p-8 text-gray-400">Not found</div>`;
-  return`<div class="max-w-6xl mx-auto px-4 py-6 fade">
+  return`<div class="max-w-6xl mx-auto px-6 py-7 fade">
   <div class="flex items-center gap-2 text-sm text-gray-400 mb-4">
-    <button data-act="nav-clients" class="hover:text-blue-900">Clients</button><span>›</span>
-    <button data-act="open-client" data-id="${c.id}" class="hover:text-blue-900">${esc(c.name)}</button><span>›</span>
+    <button data-act="nav-clients" class="hover:text-[#0e7490]">Clients</button><span>›</span>
+    <button data-act="open-client" data-id="${c.id}" class="hover:text-[#0e7490]">${esc(c.name)}</button><span>›</span>
     <span class="text-gray-900 font-medium truncate max-w-xs">${esc(i.name)}</span>
   </div>
-  <div class="flex items-center gap-3 mb-6 flex-wrap">
-    <h1 class="text-xl font-bold text-gray-900">${esc(i.name)}</h1>${sbadge(i.status)}
+  <div class="flex items-center gap-3 mb-2 flex-wrap">
+    <h1 class="text-xl font-bold text-gray-900">${esc(i.name)}</h1>${sbadge(i.status)}${overdueBadge(i)}
   </div>
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-5">
     <div class="bg-white rounded-2xl border border-gray-100 p-6">
       <h3 class="font-semibold text-gray-900 mb-4 text-sm">Details</h3>
       <div class="space-y-4">
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Status</label>
-          ${can('edit')?`<select id="f-status" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">${STATUSES.map(s=>`<option${s===i.status?' selected':''}>${s}</option>`).join('')}</select>`:sbadge(i.status)}
+          ${can('edit')?`<select id="f-status" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${STATUSES.map(s=>`<option${s===i.status?' selected':''}>${s}</option>`).join('')}</select>`:sbadge(i.status)}
         </div>
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Assignee</label>
-          ${can('edit')?`<input id="f-assignee" type="text" value="${esc(i.assignee||'')}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>`:
+          ${can('edit')?`<input id="f-assignee" type="text" value="${esc(i.assignee||'')}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`:
           `<p class="text-sm text-gray-700">${esc(i.assignee||'—')}</p>`}
         </div>
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Due Date</label>
-          ${can('edit')?`<input id="f-due" type="date" value="${esc(i.dueDate||'')}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>`:
+          ${can('edit')?`<input id="f-due" type="date" value="${esc(i.dueDate||'')}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`:
           `<p class="text-sm text-gray-700">${fmtDate(i.dueDate)}</p>`}
         </div>
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Description</label>
-          ${can('edit')?`<textarea id="f-desc" rows="4" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none">${esc(i.description||'')}</textarea>`:
+          ${can('edit')?`<textarea id="f-desc" rows="4" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(i.description||'')}</textarea>`:
           `<p class="text-sm text-gray-700 leading-relaxed">${esc(i.description||'—')}</p>`}
         </div>
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Next Action</label>
-          ${can('edit')?`<textarea id="f-next" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none">${esc(i.nextAction||'')}</textarea>`:
+          ${can('edit')?`<textarea id="f-next" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(i.nextAction||'')}</textarea>`:
           `<p class="text-sm text-gray-700">${esc(i.nextAction||'—')}</p>`}
         </div>
-        ${can('edit')?`<button data-act="save-integ" data-cid="${c.id}" data-iid="${i.id}" class="w-full bg-blue-900 text-white font-semibold rounded-xl py-2.5 text-sm hover:bg-blue-800 transition">Save Changes</button>`:''}
-        ${can('admin')?`<button data-act="delete-integ" data-cid="${c.id}" data-iid="${i.id}" class="w-full text-red-400 hover:text-red-600 text-xs py-1 transition">Delete Integration</button>`:''}
+        ${can('edit')?`<button data-act="save-integ" data-cid="${c.id}" data-iid="${i.id}" class="w-full bg-[#0e7490] text-white font-semibold rounded-xl py-2.5 text-sm hover:bg-[#0d3d4f] transition">Save Changes</button>`:''}
+        ${can('edit')&&i.status!=='Completed'?`<button data-act="mark-complete" data-cid="${c.id}" data-iid="${i.id}" class="w-full text-green-700 bg-green-50 hover:bg-green-100 font-medium rounded-xl py-2 text-xs transition">✓ Mark as Complete</button>`:''}
+        ${can('admin')?`<button data-act="delete-integ" data-cid="${c.id}" data-iid="${i.id}" class="w-full text-rose-400 hover:text-rose-600 text-xs py-1 transition">Delete Integration</button>`:''}
       </div>
     </div>
     <div class="bg-white rounded-2xl border border-gray-100 p-6">
@@ -246,14 +392,17 @@ function renderIntegDetail(clientId,integId){
         <h3 class="font-semibold text-gray-900 text-sm">Timeline <span class="text-gray-400 font-normal">(${i.timeline?.length||0})</span></h3>
       </div>
       ${can('edit')?`<div class="mb-4">
-        <textarea id="tl-input" rows="3" placeholder="What happened? Current status?" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none mb-2"></textarea>
-        <button data-act="add-timeline" data-cid="${c.id}" data-iid="${i.id}" class="w-full text-sm font-medium bg-gray-50 hover:bg-blue-50 hover:text-blue-900 text-gray-700 border border-gray-200 rounded-xl py-2 transition">+ Add Update</button>
+        <textarea id="tl-input" rows="3" placeholder="What happened? Current status?" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none mb-2"></textarea>
+        <button data-act="add-timeline" data-cid="${c.id}" data-iid="${i.id}" class="w-full text-sm font-medium bg-gray-50 hover:bg-[#0e7490]/10 hover:text-[#0e7490] text-gray-700 border border-gray-200 rounded-xl py-2 transition">+ Add Update</button>
       </div>`:''}
       <div class="space-y-3 max-h-[440px] overflow-y-auto pr-1">
         ${!(i.timeline?.length)?`<p class="text-sm text-gray-400 text-center py-8">No updates yet</p>`:
         i.timeline.map((t,idx,arr)=>`<div class="relative pl-5 ${idx<arr.length-1?'pb-3 border-l-2 border-gray-100':''}">
-          <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 bg-blue-600 rounded-full border-2 border-white ring-1 ring-blue-200"></div>
-          <div class="text-xs font-semibold text-blue-700 mb-1">${esc(t.date)} · ${esc(t.addedBy||'')}</div>
+          <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 bg-[#0e7490] rounded-full border-2 border-white ring-1 ring-[#0e7490]/30"></div>
+          <div class="flex items-start justify-between gap-2">
+            <div class="text-xs font-semibold text-[#0e7490] mb-1">${esc(t.date)} · ${esc(t.addedBy||'')}</div>
+            <button data-act="copy-update" data-text="${esc(t.update)}" class="text-[10px] text-gray-300 hover:text-[#0e7490] shrink-0">Copy</button>
+          </div>
           <p class="text-sm text-gray-700 leading-relaxed">${esc(t.update)}</p>
           ${t.addedAt?`<div class="text-xs text-gray-400 mt-1">${fmtDate(t.addedAt)}</div>`:''}
         </div>`).join('')}
@@ -265,10 +414,10 @@ function renderIntegDetail(clientId,integId){
 
 // ─── ADMIN ────────────────────────────────────────────────────────
 function renderAdmin(){
-  return`<div class="max-w-7xl mx-auto px-4 py-6 fade">
+  return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
   <h1 class="text-xl font-bold text-gray-900 mb-5">Admin</h1>
   <div class="flex border-b border-gray-200 mb-6 gap-1">
-    ${['clients','users'].map(t=>`<button data-act="admin-tab" data-tab="${t}" class="px-4 py-2.5 text-sm font-medium border-b-2 transition ${S.adminTab===t?'border-blue-900 text-blue-900':'border-transparent text-gray-500 hover:text-gray-800'}">${t==='clients'?'Clients & Integrations':'Users'}</button>`).join('')}
+    ${['clients','users'].map(t=>`<button data-act="admin-tab" data-tab="${t}" class="px-4 py-2.5 text-sm font-medium border-b-2 transition ${S.adminTab===t?'border-[#0e7490] text-[#0e7490]':'border-transparent text-gray-500 hover:text-gray-800'}">${t==='clients'?'Clients & Integrations':'Users'}</button>`).join('')}
   </div>
   ${S.adminTab==='clients'?renderAdminClients():renderAdminUsers()}
 </div>`;
@@ -276,7 +425,7 @@ function renderAdmin(){
 
 function renderAdminClients(){
   return`<div>
-  <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-client" class="bg-blue-900 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-blue-800 transition">+ Add Client</button></div>
+  <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-client" class="bg-[#0e7490] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">+ Add Client</button></div>
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <table class="w-full text-sm">
       <thead class="border-b border-gray-100 bg-gray-50"><tr>
@@ -286,11 +435,11 @@ function renderAdminClients(){
         ${S.clients.map(c=>`<tr class="hover:bg-gray-50/50 transition">
           <td class="px-4 py-3"><div class="font-medium text-gray-900">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 truncate max-w-[180px]">${esc(c.description)}</div>`:''}</td>
           <td class="px-4 py-3 font-semibold text-gray-700">${c.integrations.length}</td>
-          <td class="px-4 py-3">${c.integrations.filter(i=>i.status==='At Risk').length>0?`<span class="text-red-600 font-semibold">${c.integrations.filter(i=>i.status==='At Risk').length}</span>`:`<span class="text-gray-400">0</span>`}</td>
+          <td class="px-4 py-3">${c.integrations.filter(i=>i.status==='At Risk').length>0?`<span class="text-rose-600 font-semibold">${c.integrations.filter(i=>i.status==='At Risk').length}</span>`:`<span class="text-gray-400">0</span>`}</td>
           <td class="px-4 py-3">${c.integrations.filter(i=>i.status==='Completed').length>0?`<span class="text-green-600 font-semibold">${c.integrations.filter(i=>i.status==='Completed').length}</span>`:`<span class="text-gray-400">0</span>`}</td>
           <td class="px-4 py-3"><div class="flex gap-2">
-            <button data-act="modal-open" data-modal="add-integ" data-cid="${c.id}" class="text-xs text-blue-700 hover:text-blue-900 font-medium">+ Integ</button>
-            <button data-act="delete-client" data-id="${c.id}" class="text-xs text-red-400 hover:text-red-600 font-medium">Delete</button>
+            <button data-act="modal-open" data-modal="add-integ" data-cid="${c.id}" class="text-xs text-[#0e7490] hover:text-[#0d3d4f] font-medium">+ Integ</button>
+            <button data-act="delete-client" data-id="${c.id}" class="text-xs text-rose-400 hover:text-rose-600 font-medium">Delete</button>
           </div></td>
         </tr>`).join('')}
       </tbody>
@@ -301,22 +450,22 @@ function renderAdminClients(){
 
 function renderAdminUsers(){
   return`<div>
-  <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-user" class="bg-blue-900 text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-blue-800 transition">+ Add User</button></div>
+  <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-user" class="bg-[#0e7490] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">+ Add User</button></div>
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <table class="w-full text-sm">
       <thead class="border-b border-gray-100 bg-gray-50"><tr>
         ${['Username','Name','Role','Actions'].map(h=>`<th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}
       </tr></thead>
       <tbody class="divide-y divide-gray-50">
-        ${S.users.map(u=>`<tr class="hover:bg-gray-50/50 transition">
+        ${S.users.length?S.users.map(u=>`<tr class="hover:bg-gray-50/50 transition">
           <td class="px-4 py-3 font-mono text-xs text-gray-700">${esc(u.username)}</td>
           <td class="px-4 py-3 font-medium text-gray-900">${esc(u.name)}</td>
           <td class="px-4 py-3">${can('admin')&&u.id!==S.user?.id
-            ?`<select data-act="change-role" data-uid="${u.id}" class="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400">${ROLES.map(r=>`<option${r===u.role?' selected':''}>${r}</option>`).join('')}</select>`
-            :`<span class="text-xs px-2 py-0.5 rounded-full font-medium ${u.role==='admin'?'bg-purple-100 text-purple-700':u.role==='editor'?'bg-blue-100 text-blue-700':'bg-gray-100 text-gray-600'}">${u.role}</span>`}
+            ?`<select data-act="change-role" data-uid="${u.id}" class="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${ROLES.map(r=>`<option${r===u.role?' selected':''}>${r}</option>`).join('')}</select>`
+            :`<span class="text-xs px-2 py-0.5 rounded-full font-medium ${u.role==='admin'?'bg-violet-100 text-violet-700':u.role==='editor'?'bg-cyan-100 text-cyan-800':'bg-gray-100 text-gray-600'}">${u.role}</span>`}
           </td>
-          <td class="px-4 py-3">${u.id!==S.user?.id?`<button data-act="delete-user" data-uid="${u.id}" class="text-xs text-red-400 hover:text-red-600 font-medium">Delete</button>`:`<span class="text-xs text-gray-300">current user</span>`}</td>
-        </tr>`).join('')}
+          <td class="px-4 py-3">${u.id!==S.user?.id?`<button data-act="delete-user" data-uid="${u.id}" class="text-xs text-rose-400 hover:text-rose-600 font-medium">Delete</button>`:`<span class="text-xs text-gray-300">current user</span>`}</td>
+        </tr>`).join(''):`<tr><td colspan="4" class="text-center py-8 text-gray-400 text-sm">Loading users…</td></tr>`}
       </tbody>
     </table>
   </div>
@@ -326,40 +475,40 @@ function renderAdminUsers(){
 // ─── MODAL ────────────────────────────────────────────────────────
 function renderModal(){
   const m=S.modal;if(!m)return'';
-  let title='',body='',btnLabel='Create',btnCls='bg-blue-900 hover:bg-blue-800';
+  let title='',body='',btnLabel='Create',btnCls='bg-[#0e7490] hover:bg-[#0d3d4f]';
   if(m.type==='add-client'){
     title='Add Client';
     body=`<div class="space-y-3">
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Client Name *</label><input id="m1" type="text" placeholder="e.g. HDFC Bank" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m2" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"></textarea></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Client Name *</label><input id="m1" type="text" placeholder="e.g. HDFC Bank" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m2" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none"></textarea></div>
     </div>`;
   } else if(m.type==='add-integ'){
     const cid=m.cid||'';title='Add Integration';
     body=`<div class="space-y-3">
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Client</label>
-        <select id="m0" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">${S.clients.map(c=>`<option value="${c.id}"${c.id===cid?' selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Integration Name *</label><input id="m1" type="text" placeholder="e.g. Darwinbox → SAP SF" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/></div>
+        <select id="m0" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${S.clients.map(c=>`<option value="${c.id}"${c.id===cid?' selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Integration Name *</label><input id="m1" type="text" placeholder="e.g. Darwinbox → SAP SF" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div class="grid grid-cols-2 gap-3">
         <div><label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
-          <select id="m2" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">${STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></div>
-        <div><label class="block text-xs font-medium text-gray-500 mb-1">Assignee</label><input id="m3" type="text" placeholder="Name" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/></div>
+          <select id="m2" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></div>
+        <div><label class="block text-xs font-medium text-gray-500 mb-1">Assignee</label><input id="m3" type="text" placeholder="Name" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       </div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Due Date</label><input id="m4" type="date" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m5" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"></textarea></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Due Date</label><input id="m4" type="date" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m5" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none"></textarea></div>
     </div>`;
   } else if(m.type==='add-user'){
     title='Add User';
     body=`<div class="space-y-3">
       <div class="grid grid-cols-2 gap-3">
-        <div><label class="block text-xs font-medium text-gray-500 mb-1">Username *</label><input id="m1" type="text" placeholder="john.doe" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/></div>
-        <div><label class="block text-xs font-medium text-gray-500 mb-1">Full Name *</label><input id="m2" type="text" placeholder="John Doe" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/></div>
+        <div><label class="block text-xs font-medium text-gray-500 mb-1">Username *</label><input id="m1" type="text" placeholder="john.doe" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+        <div><label class="block text-xs font-medium text-gray-500 mb-1">Full Name *</label><input id="m2" type="text" placeholder="John Doe" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       </div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Password *</label><input id="m3" type="password" placeholder="••••••••" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Password *</label><input id="m3" type="password" placeholder="••••••••" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Role</label>
-        <select id="m4" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">${ROLES.map(r=>`<option>${r}</option>`).join('')}</select></div>
+        <select id="m4" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${ROLES.map(r=>`<option>${r}</option>`).join('')}</select></div>
     </div>`;
   } else if(m.type==='confirm'){
-    title='Confirm';btnLabel='Delete';btnCls='bg-red-600 hover:bg-red-700';
+    title='Confirm';btnLabel='Delete';btnCls='bg-rose-600 hover:bg-rose-700';
     body=`<p class="text-sm text-gray-600">${esc(m.msg||'Are you sure? This cannot be undone.')}</p>`;
   }
   return`<div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 fade" id="modal-overlay">
@@ -377,30 +526,32 @@ function renderModal(){
 </div>`;
 }
 
-// ─── EXPORT: PPTX ─────────────────────────────────────────────────
+// ─── EXPORT: PPTX (Kognoz branded) ────────────────────────────────
 async function exportPptx(clientId){
   const c=S.clients.find(x=>x.id===clientId);if(!c)return;
   showToast('Generating PPTX…','info');
   try{
     const pptx=new PptxGenJS();pptx.layout='LAYOUT_WIDE';
+    const NV=TEAL_DARK,MG=MAGENTA;
     // Cover
-    const s1=pptx.addSlide();s1.background={color:NAVY};
-    s1.addText('INTEGRATION STATUS REPORT',{x:.5,y:1.0,w:12.5,h:.4,fontSize:10,color:'93c5fd',align:'center',charSpacing:4});
+    const s1=pptx.addSlide();s1.background={color:NV};
+    s1.addText('INTEGRATION STATUS REPORT',{x:.5,y:1.0,w:12.5,h:.4,fontSize:10,color:'7dd3e8',align:'center',charSpacing:4});
     s1.addText(c.name,{x:.5,y:1.6,w:12.5,h:1.2,fontSize:44,color:'FFFFFF',bold:true,align:'center'});
-    s1.addText('Prepared by Kognoz',{x:.5,y:3.0,w:12.5,h:.4,fontSize:14,color:'bfdbfe',align:'center'});
+    s1.addText('Prepared by Kognoz',{x:.5,y:3.0,w:12.5,h:.4,fontSize:14,color:'7dd3e8',align:'center'});
+    s1.addShape(pptx.ShapeType.rect,{x:5.65,y:3.55,w:2,h:.05,fill:{color:MG},line:{type:'none'}});
     s1.addText(new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}),{x:.5,y:6.7,w:12.5,h:.3,fontSize:10,color:'64748b',align:'center'});
     // Summary
-    const s2=pptx.addSlide();s2.background={color:'f8fafc'};
-    s2.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.3,h:.7,fill:{color:NAVY},line:{type:'none'}});
+    const s2=pptx.addSlide();s2.background={color:'f5f9fa'};
+    s2.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.3,h:.7,fill:{color:NV},line:{type:'none'}});
     s2.addText('Integration Summary',{x:.4,y:.1,w:12,h:.5,fontSize:15,color:'FFFFFF',bold:true});
-    s2.addText(c.name,{x:.4,y:.1,w:12.5,h:.5,fontSize:11,color:'93c5fd',align:'right'});
+    s2.addText(c.name,{x:.4,y:.1,w:12.5,h:.5,fontSize:11,color:'7dd3e8',align:'right'});
     const sg={};c.integrations.forEach(i=>sg[i.status]=(sg[i.status]||0)+1);
-    [{l:'Total',v:c.integrations.length,col:NAVY},{l:'In Progress',v:sg['In Progress']||0,col:'3b82f6'},{l:'At Risk',v:sg['At Risk']||0,col:'ef4444'},{l:'Completed',v:sg['Completed']||0,col:'22c55e'},{l:'On Hold',v:sg['On Hold']||0,col:'f59e0b'}]
+    [{l:'Total',v:c.integrations.length,col:NV},{l:'In Progress',v:sg['In Progress']||0,col:SHEX['In Progress']},{l:'At Risk',v:sg['At Risk']||0,col:SHEX['At Risk']},{l:'Completed',v:sg['Completed']||0,col:SHEX['Completed']},{l:'On Hold',v:sg['On Hold']||0,col:SHEX['On Hold']}]
     .forEach(({l,v,col},i)=>{const x=.4+i*2.5;s2.addShape(pptx.ShapeType.rect,{x,y:.85,w:2.2,h:.85,fill:{color:col},line:{type:'none'}});s2.addText(String(v),{x,y:.88,w:2.2,h:.48,fontSize:22,color:'FFFFFF',bold:true,align:'center'});s2.addText(l,{x,y:1.36,w:2.2,h:.28,fontSize:7.5,color:'FFFFFF',align:'center'});});
-    const rows=[['Integration','Status','Assignee','Due Date'].map(t=>({text:t,options:{bold:true,fill:{color:NAVY},color:'FFFFFF',fontSize:9}})),
+    const rows=[['Integration','Status','Assignee','Due Date'].map(t=>({text:t,options:{bold:true,fill:{color:NV},color:'FFFFFF',fontSize:9}})),
       ...c.integrations.map((i,idx)=>[
         {text:i.name,options:{fontSize:8.5,color:'1f2937',fill:{color:idx%2?'FFFFFF':'f9fafb'}}},
-        {text:i.status,options:{fontSize:8.5,bold:true,color:SHEX[i.status]||'9ca3af',fill:{color:idx%2?'FFFFFF':'f9fafb'}}},
+        {text:i.status,options:{fontSize:8.5,bold:true,color:SHEX[i.status]||'64748b',fill:{color:idx%2?'FFFFFF':'f9fafb'}}},
         {text:i.assignee||'—',options:{fontSize:8.5,color:'4b5563',fill:{color:idx%2?'FFFFFF':'f9fafb'}}},
         {text:i.dueDate?fmtDate(i.dueDate):'—',options:{fontSize:8.5,color:'4b5563',fill:{color:idx%2?'FFFFFF':'f9fafb'}}},
       ])];
@@ -408,57 +559,59 @@ async function exportPptx(clientId){
     // Per-integration
     c.integrations.forEach(i=>{
       const sl=pptx.addSlide();sl.background={color:'FFFFFF'};
-      sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.3,h:.75,fill:{color:NAVY},line:{type:'none'}});
+      sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:13.3,h:.75,fill:{color:NV},line:{type:'none'}});
       sl.addText(i.name,{x:.4,y:.1,w:9.5,h:.55,fontSize:15,color:'FFFFFF',bold:true});
-      sl.addShape(pptx.ShapeType.rect,{x:10.2,y:.12,w:2.7,h:.5,fill:{color:SHEX[i.status]||'9ca3af'},line:{type:'none'}});
+      sl.addShape(pptx.ShapeType.rect,{x:10.2,y:.12,w:2.7,h:.5,fill:{color:SHEX[i.status]||'64748b'},line:{type:'none'}});
       sl.addText(i.status,{x:10.2,y:.12,w:2.7,h:.5,fontSize:9.5,color:'FFFFFF',bold:true,align:'center',valign:'middle'});
-      sl.addText('Details',{x:.4,y:.95,w:6,h:.35,fontSize:11,bold:true,color:NAVY});
+      sl.addText('Details',{x:.4,y:.95,w:6,h:.35,fontSize:11,bold:true,color:NV});
       [{l:'Assignee',v:i.assignee||'—'},{l:'Due Date',v:i.dueDate?fmtDate(i.dueDate):'—'},{l:'Description',v:i.description||'—'},{l:'Next Action',v:i.nextAction||'—'}]
       .forEach(({l,v},di)=>{const y=1.4+di*.78;sl.addText(l+':',{x:.4,y,w:1.8,h:.3,fontSize:8.5,bold:true,color:'374151'});sl.addText(v.length>90?v.slice(0,90)+'…':v,{x:.4,y:y+.28,w:6.2,h:.4,fontSize:8.5,color:'6b7280',wrap:true});});
       sl.addShape(pptx.ShapeType.rect,{x:7.0,y:.82,w:.02,h:6.4,fill:{color:'e5e7eb'},line:{type:'none'}});
-      sl.addText('Timeline',{x:7.2,y:.95,w:5.8,h:.35,fontSize:11,bold:true,color:NAVY});
+      sl.addText('Timeline',{x:7.2,y:.95,w:5.8,h:.35,fontSize:11,bold:true,color:NV});
       const tls=(i.timeline||[]).slice(0,4);
       if(!tls.length){sl.addText('No updates yet',{x:7.2,y:1.5,w:5.8,h:.4,fontSize:9,color:'9ca3af',italic:true});}
       else tls.forEach((t,ti)=>{const y=1.38+ti*1.3;
-        sl.addShape(pptx.ShapeType.ellipse,{x:7.05,y:y+.04,w:.18,h:.18,fill:{color:'3b82f6'},line:{type:'none'}});
-        sl.addText(fmtDate(t.date)+(t.addedBy?' · '+t.addedBy:''),{x:7.28,y,w:5.6,h:.28,fontSize:8.5,color:'3b82f6',bold:true});
+        sl.addShape(pptx.ShapeType.ellipse,{x:7.05,y:y+.04,w:.18,h:.18,fill:{color:MG},line:{type:'none'}});
+        sl.addText(fmtDate(t.date)+(t.addedBy?' · '+t.addedBy:''),{x:7.28,y,w:5.6,h:.28,fontSize:8.5,color:NV,bold:true});
         sl.addText(t.update.length>130?t.update.slice(0,130)+'…':t.update,{x:7.28,y:y+.28,w:5.6,h:.68,fontSize:8.5,color:'374151',wrap:true});
         sl.addText('— '+(t.addedBy||''),{x:7.28,y:y+.98,w:5.6,h:.22,fontSize:7.5,color:'9ca3af',italic:true});});
     });
     // Thank you
-    const sL=pptx.addSlide();sL.background={color:NAVY};
+    const sL=pptx.addSlide();sL.background={color:NV};
     sL.addText('Thank You',{x:.5,y:2.3,w:12.5,h:1.1,fontSize:44,color:'FFFFFF',bold:true,align:'center'});
-    sL.addText('Kognoz · HR Transformation & Consulting',{x:.5,y:3.6,w:12.5,h:.5,fontSize:14,color:'93c5fd',align:'center'});
+    sL.addShape(pptx.ShapeType.rect,{x:5.9,y:3.3,w:1.5,h:.05,fill:{color:MG},line:{type:'none'}});
+    sL.addText('Kognoz · HR Transformation & Consulting',{x:.5,y:3.5,w:12.5,h:.5,fontSize:14,color:'7dd3e8',align:'center'});
     await pptx.writeFile({fileName:`${c.name}_Integration_Report.pptx`});
     showToast('PPTX downloaded ✓');
   }catch(e){console.error(e);showToast('PPTX failed: '+e.message,'error');}
 }
 
-// ─── EXPORT: PDF ──────────────────────────────────────────────────
+// ─── EXPORT: PDF (Kognoz branded) ──────────────────────────────────
 function exportPdf(clientId){
   const c=S.clients.find(x=>x.id===clientId);if(!c)return;
   showToast('Generating PDF…','info');
   try{
     const{jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape',format:'a4',unit:'mm'});
-    const W=297,H=210,NV=[30,58,138];
+    const W=297,H=210,NV=[13,61,79],MG=[181,23,158];
     // Cover
     doc.setFillColor(...NV);doc.rect(0,0,W,H,'F');
-    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(147,197,253);doc.text('INTEGRATION STATUS REPORT',W/2,58,{align:'center'});
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(125,211,232);doc.text('INTEGRATION STATUS REPORT',W/2,58,{align:'center'});
     doc.setFont('helvetica','bold');doc.setFontSize(34);doc.setTextColor(255,255,255);doc.text(c.name,W/2,80,{align:'center'});
-    doc.setFont('helvetica','normal');doc.setFontSize(14);doc.setTextColor(147,197,253);doc.text('Prepared by Kognoz',W/2,95,{align:'center'});
+    doc.setFont('helvetica','normal');doc.setFontSize(14);doc.setTextColor(125,211,232);doc.text('Prepared by Kognoz',W/2,95,{align:'center'});
+    doc.setFillColor(...MG);doc.rect(W/2-12,100,24,1,'F');
     doc.setFontSize(10);doc.setTextColor(100,116,139);doc.text(new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}),W/2,H-8,{align:'center'});
     // Summary
     doc.addPage();doc.setFillColor(...NV);doc.rect(0,0,W,14,'F');
     doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text('Integration Summary',10,9.5);doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(c.name,W-10,9.5,{align:'right'});
     const sg={};c.integrations.forEach(i=>sg[i.status]=(sg[i.status]||0)+1);
-    [{l:'Total',v:c.integrations.length,rgb:NV},{l:'In Progress',v:sg['In Progress']||0,rgb:[59,130,246]},{l:'At Risk',v:sg['At Risk']||0,rgb:[239,68,68]},{l:'Completed',v:sg['Completed']||0,rgb:[34,197,94]},{l:'On Hold',v:sg['On Hold']||0,rgb:[245,158,11]}]
+    [{l:'Total',v:c.integrations.length,rgb:NV},{l:'In Progress',v:sg['In Progress']||0,rgb:SRGB['In Progress']},{l:'At Risk',v:sg['At Risk']||0,rgb:SRGB['At Risk']},{l:'Completed',v:sg['Completed']||0,rgb:SRGB['Completed']},{l:'On Hold',v:sg['On Hold']||0,rgb:SRGB['On Hold']}]
     .forEach(({l,v,rgb},i)=>{const x=10+i*57;doc.setFillColor(...rgb);doc.roundedRect(x,18,50,20,2,2,'F');doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(255,255,255);doc.text(String(v),x+25,30,{align:'center'});doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.text(l,x+25,37,{align:'center'});});
-    doc.autoTable({startY:42,head:[['Integration','Status','Assignee','Due Date']],body:c.integrations.map(i=>[i.name,i.status,i.assignee||'—',i.dueDate?fmtDate(i.dueDate):'—']),headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:9},styles:{fontSize:8.5,cellPadding:3},alternateRowStyles:{fillColor:[248,250,252]},columnStyles:{0:{cellWidth:105},1:{cellWidth:40},2:{cellWidth:60},3:{cellWidth:50}},didParseCell:d=>{if(d.column.index===1&&d.section==='body'){const rgb=SRGB[d.cell.raw];if(rgb){d.cell.styles.textColor=rgb;d.cell.styles.fontStyle='bold';}}},margin:{left:10,right:10}});
+    doc.autoTable({startY:42,head:[['Integration','Status','Assignee','Due Date']],body:c.integrations.map(i=>[i.name,i.status,i.assignee||'—',i.dueDate?fmtDate(i.dueDate):'—']),headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:9},styles:{fontSize:8.5,cellPadding:3},alternateRowStyles:{fillColor:[245,249,250]},columnStyles:{0:{cellWidth:105},1:{cellWidth:40},2:{cellWidth:60},3:{cellWidth:50}},didParseCell:d=>{if(d.column.index===1&&d.section==='body'){const rgb=SRGB[d.cell.raw];if(rgb){d.cell.styles.textColor=rgb;d.cell.styles.fontStyle='bold';}}},margin:{left:10,right:10}});
     // Per-integration
     c.integrations.forEach(i=>{
       doc.addPage();doc.setFillColor(...NV);doc.rect(0,0,W,14,'F');
       doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text(i.name.length>50?i.name.slice(0,50)+'…':i.name,10,9.5);
-      const srgb=SRGB[i.status]||[156,163,175];doc.setFillColor(...srgb);doc.roundedRect(240,3,52,9,2,2,'F');doc.setFontSize(8.5);doc.text(i.status,266,9,{align:'center'});
+      const srgb=SRGB[i.status]||[100,116,139];doc.setFillColor(...srgb);doc.roundedRect(240,3,52,9,2,2,'F');doc.setFontSize(8.5);doc.text(i.status,266,9,{align:'center'});
       let y=22;doc.setTextColor(...NV);doc.setFontSize(10.5);doc.setFont('helvetica','bold');doc.text('Details',10,y);y+=3;
       doc.setDrawColor(229,231,235);doc.setLineWidth(.3);doc.line(10,y,142,y);y+=6;
       [{l:'Assignee',v:i.assignee||'—'},{l:'Due Date',v:i.dueDate?fmtDate(i.dueDate):'—'},{l:'Description',v:i.description||'—'},{l:'Next Action',v:i.nextAction||'—'}]
@@ -467,12 +620,13 @@ function exportPdf(clientId){
       let ty=22;doc.setTextColor(...NV);doc.setFontSize(10.5);doc.setFont('helvetica','bold');doc.text('Timeline',156,ty);ty+=3;doc.line(156,ty,290,ty);ty+=6;
       const tls=(i.timeline||[]).slice(0,4);
       if(!tls.length){doc.setFont('helvetica','italic');doc.setFontSize(9);doc.setTextColor(156,163,175);doc.text('No updates yet',156,ty);}
-      else tls.forEach(t=>{doc.setFillColor(59,130,246);doc.circle(154.5,ty,1.5,'F');doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(59,130,246);doc.text(fmtDate(t.date)+(t.addedBy?' · '+t.addedBy:''),158,ty);ty+=5;doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(55,65,81);const lines=doc.splitTextToSize(t.update,126);doc.text(lines.slice(0,4),158,ty);ty+=lines.slice(0,4).length*4.2+6;});
+      else tls.forEach(t=>{doc.setFillColor(...MG);doc.circle(154.5,ty,1.5,'F');doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(...NV);doc.text(fmtDate(t.date)+(t.addedBy?' · '+t.addedBy:''),158,ty);ty+=5;doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(55,65,81);const lines=doc.splitTextToSize(t.update,126);doc.text(lines.slice(0,4),158,ty);ty+=lines.slice(0,4).length*4.2+6;});
     });
     // Thank you
     doc.addPage();doc.setFillColor(...NV);doc.rect(0,0,W,H,'F');
     doc.setFont('helvetica','bold');doc.setFontSize(36);doc.setTextColor(255,255,255);doc.text('Thank You',W/2,H/2-8,{align:'center'});
-    doc.setFont('helvetica','normal');doc.setFontSize(13);doc.setTextColor(147,197,253);doc.text('Kognoz · HR Transformation & Consulting',W/2,H/2+10,{align:'center'});
+    doc.setFillColor(...MG);doc.rect(W/2-10,H/2,20,1,'F');
+    doc.setFont('helvetica','normal');doc.setFontSize(13);doc.setTextColor(125,211,232);doc.text('Kognoz · HR Transformation & Consulting',W/2,H/2+10,{align:'center'});
     doc.save(`${c.name}_Integration_Report.pdf`);showToast('PDF downloaded ✓');
   }catch(e){console.error(e);showToast('PDF failed: '+e.message,'error');}
 }
@@ -497,20 +651,39 @@ document.addEventListener('click',async e=>{
     S.sessionToken=ld.token;S.user=ld.user;S.shas.users=ld.usersSha;
     try{const cl=await apiRead('data/clients.json');S.clients=cl.content;S.shas.clients=cl.sha;}
     catch(err){const e2=document.getElementById('lerr');if(e2){e2.textContent='Loaded user but failed to load clients.';e2.classList.remove('hidden');}return;}
-    navigate('clients');return;
+    if(can('admin')){try{const us=await apiRead('data/users.json');S.users=us.content;S.shas.users=us.sha;}catch(err){S.users=[S.user];}}
+    else{S.users=[S.user];}
+    navigate('dashboard');return;
   }
-  if(act==='logout'){S.user=null;S.clients=[];S.users=[];S.shas={clients:null,users:null};navigate('login');return;}
+  if(act==='logout'){S.user=null;S.clients=[];S.users=[];S.shas={clients:null,users:null};S.sessionToken=null;navigate('login');return;}
+  if(act==='nav-dashboard'){navigate('dashboard');return;}
   if(act==='nav-clients'){navigate('clients');return;}
   if(act==='nav-admin'){if(can('admin'))navigate('admin');return;}
+  if(act==='toggle-sidebar'){S.sidebarCollapsed=!S.sidebarCollapsed;try{localStorage.setItem('itk_sb_collapsed',S.sidebarCollapsed?'1':'0');}catch(e){}render();return;}
+  if(act==='toggle-clients-list'){S.sidebarClientsOpen=!S.sidebarClientsOpen;render();return;}
   if(act==='open-client'){navigate('client-detail',{clientId:el.dataset.id});return;}
   if(act==='open-integ'){navigate('integ-detail',{clientId:el.dataset.cid,integId:el.dataset.iid});return;}
   if(act==='filter'){S.filter=el.dataset.filter;render();return;}
+  if(act==='sort'){const k=el.dataset.key;if(S.sort.key===k){S.sort.dir=S.sort.dir==='asc'?'desc':'asc';}else{S.sort={key:k,dir:'asc'};}render();return;}
   if(act==='admin-tab'){S.adminTab=el.dataset.tab;render();return;}
   if(act==='exp-pptx'){await exportPptx(el.dataset.id);return;}
   if(act==='exp-pdf'){exportPdf(el.dataset.id);return;}
+  if(act==='copy-update'){try{await navigator.clipboard.writeText(el.dataset.text);showToast('Copied ✓');}catch(e){showToast('Copy failed','error');}return;}
   if(act==='modal-open'){S.modal={type:el.dataset.modal,cid:el.dataset.cid};render();setTimeout(()=>document.getElementById('m1')?.focus(),50);return;}
   if(act==='modal-close'){S.modal=null;render();return;}
 
+  if(act==='mark-complete'){
+    if(!can('edit'))return;
+    const cid=el.dataset.cid,iid=el.dataset.iid;
+    const c=S.clients.find(x=>x.id===cid);const i=c?.integrations.find(x=>x.id===iid);if(!i)return;
+    const prevStatus=i.status;i.status='Completed';
+    const entry={id:uid(),date:todayStr(),update:'Marked as Completed.',addedBy:S.user.name,addedAt:new Date().toISOString()};
+    i.timeline.unshift(entry);
+    el.textContent='Saving…';el.disabled=true;
+    try{await saveClients(`Complete: ${i.name}`);showToast('Marked complete ✓');navigate('integ-detail',{clientId:cid,integId:iid});}
+    catch(err){i.status=prevStatus;i.timeline.shift();showToast('Failed: '+err.message,'error');render();}
+    return;
+  }
   if(act==='save-integ'){
     if(!can('edit'))return;
     const cid=el.dataset.cid,iid=el.dataset.iid;
@@ -532,7 +705,7 @@ document.addEventListener('click',async e=>{
     const text=document.getElementById('tl-input')?.value.trim();
     if(!text){showToast('Enter an update','error');return;}
     const c=S.clients.find(x=>x.id===cid);const i=c?.integrations.find(x=>x.id===iid);if(!i)return;
-    const entry={id:uid(),date:new Date().toISOString().slice(0,10),update:text,addedBy:S.user.name,addedAt:new Date().toISOString()};
+    const entry={id:uid(),date:todayStr(),update:text,addedBy:S.user.name,addedAt:new Date().toISOString()};
     i.timeline.unshift(entry);el.textContent='Saving…';el.disabled=true;
     try{await saveClients(`Timeline: ${i.name}`);showToast('Update added ✓');navigate('integ-detail',{clientId:cid,integId:iid});}
     catch(err){i.timeline.shift();showToast('Failed: '+err.message,'error');el.textContent='+ Add Update';el.disabled=false;}
