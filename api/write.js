@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { encryptString } = require('./_crypto');
 
 function isValidToken(token, secret) {
   if (!token || !secret) return false;
@@ -20,9 +21,8 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  const { GITHUB_PAT, GITHUB_OWNER, GITHUB_REPO, INTEGTRACK_SECRET } = process.env;
+  const { GITHUB_PAT, GITHUB_OWNER, GITHUB_REPO, INTEGTRACK_SECRET, INTEGTRACK_ENC_KEY } = process.env;
 
-  // Validate session token
   const token = req.headers['x-session-token'];
   if (!isValidToken(token, INTEGTRACK_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -33,17 +33,18 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'path and content required' });
   }
 
-  if (!GITHUB_PAT || !GITHUB_OWNER || !GITHUB_REPO) {
+  if (!GITHUB_PAT || !GITHUB_OWNER || !GITHUB_REPO || !INTEGTRACK_ENC_KEY) {
     return res.status(500).json({ error: 'Server misconfigured: missing env vars' });
   }
 
   try {
+    const plaintext = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+    const encryptedB64 = encryptString(plaintext, INTEGTRACK_ENC_KEY);
+
     const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`;
     const body = {
       message: message || `Update ${path}`,
-      content: Buffer.from(
-        typeof content === 'string' ? content : JSON.stringify(content, null, 2)
-      ).toString('base64'),
+      content: Buffer.from(encryptedB64).toString('base64'),
     };
     if (sha) body.sha = sha;
 
