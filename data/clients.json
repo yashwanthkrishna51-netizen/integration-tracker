@@ -42,9 +42,18 @@
           {
             "id": "mqhmp04e8czq",
             "date": "2026-06-17",
-            "update": "Client has shared only sample file, reviewing the same, however module implementation is in progress, once that is completed, integration can be picked up",
+            "update": "Client has shared only sample file, reviewing the same, SFTP details still pending however module implementation is in progress, once that is completed, integration can be picked up",
             "addedBy": "Yashwanth K",
-            "addedAt": "2026-06-17T05:26:33.950Z"
+            "addedAt": "2026-06-17T05:26:33.950Z",
+            "edits": [
+              {
+                "text": "Client has shared only sample file, reviewing the same, however module implementation is in progress, once that is completed, integration can be picked up",
+                "editedAt": "2026-06-17T06:02:17.319Z",
+                "editedBy": "Yashwanth K"
+              }
+            ],
+            "lastEditedAt": "2026-06-17T06:02:17.319Z",
+            "lastEditedBy": "Yashwanth K"
           }
         ]
       }
