@@ -44,6 +44,55 @@ thead.sticky-head th{position:sticky;top:0;z-index:5}
 @keyframes skl{0%{background-position:100% 50%}100%{background-position:0% 50%}}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 ::view-transition-old(root),::view-transition-new(root){animation-duration:.2s;animation-timing-function:cubic-bezier(.2,.9,.3,1)}
+
+/* ─── DARK MODE ───────────────────────────────────────────────────
+   Overrides Tailwind's generated utility classes by selector specificity
+   (html.dark .foo beats .foo) rather than rewriting every template string. */
+html.dark{color-scheme:dark}
+html.dark body{background:#0b1219;color:#eef2f6}
+html.dark .bg-white{background-color:#141d27}
+html.dark .bg-gray-50{background-color:#1a232e}
+html.dark .bg-gray-100{background-color:#212c38}
+html.dark .bg-rose-50{background-color:#3a1620}
+html.dark .bg-rose-100{background-color:#45192a}
+html.dark .bg-green-50{background-color:#0f2a1d}
+html.dark .bg-green-100{background-color:#133622}
+html.dark .bg-cyan-50{background-color:#0d2935}
+html.dark .bg-cyan-100{background-color:#113441}
+html.dark .bg-violet-50{background-color:#211a3a}
+html.dark .bg-violet-100{background-color:#281f47}
+html.dark .bg-amber-50{background-color:#362a12}
+html.dark .text-gray-200{color:#36404c}
+html.dark .text-gray-300{color:#475260}
+html.dark .text-gray-400{color:#6b7787}
+html.dark .text-gray-500{color:#8b97a6}
+html.dark .text-gray-600{color:#a7b2c0}
+html.dark .text-gray-700{color:#c0c9d4}
+html.dark .text-gray-800{color:#d7dee5}
+html.dark .text-gray-900{color:#eef2f6}
+html.dark .text-rose-400,html.dark .text-rose-500,html.dark .text-rose-600,html.dark .text-rose-700{color:#fb7185}
+html.dark .text-green-600,html.dark .text-green-700{color:#4ade80}
+html.dark .text-cyan-800{color:#67e8f9}
+html.dark .text-amber-600,html.dark .text-amber-700{color:#fbbf24}
+html.dark .text-violet-600,html.dark .text-violet-700{color:#a78bfa}
+html.dark .border-gray-50{border-color:#182029}
+html.dark .border-gray-100{border-color:#212b36}
+html.dark .border-gray-200{border-color:#2b3744}
+html.dark .border-amber-200{border-color:#4d3a16}
+html.dark .border-green-200{border-color:#1d4029}
+html.dark .border-rose-200{border-color:#4a2030}
+html.dark .border-violet-200{border-color:#392c54}
+html.dark .border-cyan-200{border-color:#194653}
+html.dark [class~="text-[#0e7490]"]{color:#22d3ee}
+html.dark .brand-k{color:#22d3ee}
+html.dark [class~="bg-[#0e7490]/10"]{background-color:rgba(34,211,238,.14)}
+html.dark [class~="bg-[#0e7490]/5"]{background-color:rgba(34,211,238,.08)}
+html.dark [class~="border-[#0e7490]/30"]{border-color:rgba(34,211,238,.35)}
+html.dark input,html.dark select,html.dark textarea{background-color:#1a2430;color:#eef2f6;border-color:#2b3744}
+html.dark input::placeholder,html.dark textarea::placeholder{color:#5b6675}
+html.dark option{background-color:#1a2430;color:#eef2f6}
+html.dark .skel{background:linear-gradient(90deg,#1a2430 25%,#222e3a 37%,#1a2430 63%)}
+html.dark ::-webkit-scrollbar-thumb{background:#2b3744}
 </style>
 </head>
 <body class="bg-[#f5f9fa] text-gray-900">
@@ -51,10 +100,12 @@ thead.sticky-head th{position:sticky;top:0;z-index:5}
 <div id="app"></div>
 <script>
 // ─── STATE ────────────────────────────────────────────────────────
-const S={user:null,clients:[],users:[],shas:{clients:null,users:null},sessionToken:null,view:'login',params:{},adminTab:'integrations',filter:'all',search:'',modal:null,toast:null,sidebarCollapsed:false,sidebarClientsOpen:true,sort:{key:'name',dir:'asc'},editingTimelineId:null,expandedHistory:new Set(),amsFrom:'',amsTo:'',editingAmsEntryId:null,expandedAmsHistory:new Set(),cmdPaletteOpen:false,cmdQuery:'',recentlyViewed:[]};
+const S={user:null,clients:[],users:[],shas:{clients:null,users:null},sessionToken:null,view:'login',params:{},adminTab:'integrations',filter:'all',search:'',modal:null,toast:null,sidebarCollapsed:false,sidebarClientsOpen:true,sort:{key:'name',dir:'asc'},editingTimelineId:null,expandedHistory:new Set(),amsFrom:'',amsTo:'',editingAmsEntryId:null,expandedAmsHistory:new Set(),cmdPaletteOpen:false,cmdQuery:'',recentlyViewed:[],darkMode:false};
 
 try{S.sidebarCollapsed=localStorage.getItem('itk_sb_collapsed')==='1';}catch(e){}
 try{const r=localStorage.getItem('itk_recent');if(r)S.recentlyViewed=JSON.parse(r);}catch(e){}
+try{S.darkMode=localStorage.getItem('itk_dark')==='1';}catch(e){}
+if(S.darkMode)document.documentElement.classList.add('dark');
 
 // ─── CONSTANTS — KOGNOZ BRAND ─────────────────────────────────────
 const STATUSES=['Not Started','In Progress','At Risk','On Hold','Completed'];
@@ -310,6 +361,12 @@ function renderSidebar(){
         <div class="text-[10px] text-gray-400 capitalize">${esc(S.user?.role)}</div>
       </div>
     </div>`:''}
+    ${collapsed?`<button data-act="toggle-dark" title="Toggle dark mode" class="w-8 h-8 rounded-full bg-gray-50 border border-gray-200 flex items-center justify-center text-sm hover:border-[#0e7490]/30 transition mx-auto mb-1.5">${S.darkMode?'🌙':'☀️'}</button>`:`<div class="flex items-center justify-between px-2 py-1.5 mb-1">
+      <span class="text-xs text-gray-400">Theme</span>
+      <button data-act="toggle-dark" title="Toggle dark mode" class="relative w-12 h-6 rounded-full transition-colors ${S.darkMode?'bg-[#0e7490]':'bg-gray-200'}">
+        <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm flex items-center justify-center text-[10px] transition-transform" style="transform:translateX(${S.darkMode?'24px':'0px'})">${S.darkMode?'🌙':'☀️'}</span>
+      </button>
+    </div>`}
     <div class="flex justify-center mb-1.5">${collapsed?encBadge({compact:true}):encBadge()}</div>
     <button data-act="logout" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition ${collapsed?'justify-center':''}">
       <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>${collapsed?'':'Sign out'}
@@ -1544,6 +1601,7 @@ document.addEventListener('click',async e=>{
   if(act==='nav-ams'){navigate('ams-clients');return;}
   if(act==='nav-admin'){if(can('admin'))navigate('admin');return;}
   if(act==='toggle-sidebar'){S.sidebarCollapsed=!S.sidebarCollapsed;try{localStorage.setItem('itk_sb_collapsed',S.sidebarCollapsed?'1':'0');}catch(e){}render();return;}
+  if(act==='toggle-dark'){S.darkMode=!S.darkMode;document.documentElement.classList.toggle('dark',S.darkMode);try{localStorage.setItem('itk_dark',S.darkMode?'1':'0');}catch(e){}render();return;}
   if(act==='cmdp-open'){S.cmdPaletteOpen=true;S.cmdQuery='';render();setTimeout(()=>document.getElementById('cmdp-input')?.focus(),30);return;}
   if(act==='cmdp-go'){
     const r=_cmdpResults[Number(el.dataset.idx)];if(!r)return;
