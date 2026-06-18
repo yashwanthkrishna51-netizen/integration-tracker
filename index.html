@@ -555,12 +555,26 @@ function renderImplPhaseDetail(clientId,projectId,moduleId,phaseName){
 // ─── AMS ──────────────────────────────────────────────────────────
 function amsEntryAmount(hours,rate){return(hours/HOURS_PER_DAY)*rate;}
 function amsTotals(client,fromDate,toDate){
-  const log=(client.workLog||[]).filter(e=>(!fromDate||e.date>=fromDate)&&(!toDate||e.date<=toDate));
+  const allLog=client.workLog||[];
+  const log=allLog.filter(e=>(!fromDate||e.date>=fromDate)&&(!toDate||e.date<=toDate));
   const totalHours=log.reduce((a,e)=>a+Number(e.hours||0),0);
-  const totalAmount=amsEntryAmount(totalHours,client.manDayRate||0);
+  const allTimeHours=allLog.reduce((a,e)=>a+Number(e.hours||0),0);
+  const bucket=client.totalAvailableHours;
+  const hasBucket=bucket!==undefined&&bucket!==null&&bucket>0;
+  // Bucket depletes over the client's whole history, not per invoice — so a given
+  // billing period only gets billed for whatever's left after earlier hours ate into it.
+  let billableHours=totalHours,coveredHours=0,balanceAvailable=null;
+  if(hasBucket){
+    const hoursBeforePeriod=fromDate?allLog.filter(e=>e.date<fromDate).reduce((a,e)=>a+Number(e.hours||0),0):0;
+    const remainingAtPeriodStart=Math.max(0,bucket-hoursBeforePeriod);
+    coveredHours=Math.min(totalHours,remainingAtPeriodStart);
+    billableHours=Math.max(0,totalHours-remainingAtPeriodStart);
+    balanceAvailable=Math.max(0,bucket-allTimeHours);
+  }
+  const totalAmount=amsEntryAmount(billableHours,client.manDayRate||0);
   const byCategory={};
   log.forEach(e=>{byCategory[e.category]=(byCategory[e.category]||0)+Number(e.hours||0);});
-  return{log,totalHours,totalAmount,byCategory};
+  return{log,totalHours,totalAmount,byCategory,hasBucket,totalAvailableHours:bucket,billableHours,coveredHours,consumedAllTime:allTimeHours,balanceAvailable};
 }
 function renderAmsClientList(){
   return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
@@ -576,6 +590,7 @@ function renderAmsClientList(){
         ${c.description?`<div class="text-xs text-gray-400 mb-3">${esc(c.description)}</div>`:''}
         <div class="text-xs text-gray-500">${t.totalHours.toFixed(1)} hours logged total</div>
         ${can('admin')?`<div class="text-xs text-gray-400 mt-1">₹${(c.manDayRate||0).toLocaleString('en-IN')}/day rate</div>`:''}
+        ${t.hasBucket?`<div class="text-xs mt-1 ${t.balanceAvailable>0?'text-green-600':'text-rose-600'} font-medium">${t.balanceAvailable.toFixed(1)} / ${t.totalAvailableHours.toFixed(1)} hrs available</div>`:''}
       </div>`;
     }).join(''):`<div class="col-span-3 text-center py-16 text-gray-400">No AMS clients yet.</div>`;})()}
   </div>
@@ -594,7 +609,10 @@ function renderAmsClientDetail(clientId){
   </div>
   <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
     <div><h1 class="text-xl font-bold text-gray-900">${esc(c.name)}</h1>${c.description?`<p class="text-sm text-gray-400 mt-0.5">${esc(c.description)}</p>`:''}</div>
-    ${can('admin')?`<button data-act="delete-ams-client" data-id="${c.id}" class="text-rose-400 hover:text-rose-600 text-xs px-2">Delete Client</button>`:''}
+    ${can('admin')?`<div class="flex gap-2">
+      <button data-act="edit-ams-client" data-id="${c.id}" class="text-gray-400 hover:text-[#0e7490] text-xs px-2 border border-gray-200 rounded-lg py-1.5">Edit</button>
+      <button data-act="delete-ams-client" data-id="${c.id}" class="text-rose-400 hover:text-rose-600 text-xs px-2">Delete Client</button>
+    </div>`:''}
   </div>
   ${can('edit')?`<div class="bg-white rounded-2xl border border-gray-100 p-5 mb-6">
     <h3 class="font-semibold text-gray-900 text-sm mb-3">Log Hours</h3>
@@ -608,15 +626,20 @@ function renderAmsClientDetail(clientId){
   </div>`:''}
   ${can('admin')?`<div class="bg-white rounded-2xl border border-gray-100 p-5 mb-6">
     <h3 class="font-semibold text-gray-900 text-sm mb-3">Billing</h3>
+    ${t.hasBucket?`<div class="grid grid-cols-3 gap-4 mb-4">
+      <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">${t.totalAvailableHours.toFixed(1)}</div><div class="text-xs text-gray-500">Total Available</div></div>
+      <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">${t.consumedAllTime.toFixed(1)}</div><div class="text-xs text-gray-500">Consumed (all-time)</div></div>
+      <div class="${t.balanceAvailable>0?'bg-green-50':'bg-rose-50'} rounded-xl p-4"><div class="text-2xl font-bold ${t.balanceAvailable>0?'text-green-600':'text-rose-600'}">${t.balanceAvailable.toFixed(1)}</div><div class="text-xs text-gray-500">Balance Available</div></div>
+    </div>`:''}
     <div class="flex flex-wrap items-end gap-3 mb-4">
       <div><label class="block text-xs text-gray-400 mb-1">From</label><input id="ams-from" data-act="ams-range" type="date" value="${esc(S.amsFrom)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs text-gray-400 mb-1">To</label><input id="ams-to" data-act="ams-range" type="date" value="${esc(S.amsTo)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <button data-act="exp-ams-invoice" data-cid="${c.id}" class="bg-[#0e7490] text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">📄 Export Invoice PDF</button>
     </div>
     <div class="grid grid-cols-3 gap-4 mb-4">
-      <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">${t.totalHours.toFixed(1)}</div><div class="text-xs text-gray-500">Total Hours</div></div>
+      <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">${t.totalHours.toFixed(1)}</div><div class="text-xs text-gray-500">Hours This Period${t.hasBucket?` (${t.coveredHours.toFixed(1)} covered)`:''}</div></div>
       <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">₹${(c.manDayRate||0).toLocaleString('en-IN')}</div><div class="text-xs text-gray-500">Day Rate</div></div>
-      <div class="bg-[#0e7490]/10 rounded-xl p-4"><div class="text-2xl font-bold text-[#0e7490]">₹${t.totalAmount.toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="text-xs text-gray-500">Total Amount</div></div>
+      <div class="bg-[#0e7490]/10 rounded-xl p-4"><div class="text-2xl font-bold text-[#0e7490]">₹${t.totalAmount.toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="text-xs text-gray-500">Billable Amount</div></div>
     </div>
     <div class="flex flex-wrap gap-2">
       ${Object.entries(t.byCategory).map(([cat,hrs])=>`<span class="text-xs bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-gray-600">${esc(cat)}: ${hrs.toFixed(1)}h</span>`).join('')||'<span class="text-xs text-gray-400">No entries in this range</span>'}
@@ -656,7 +679,7 @@ function renderAmsClientDetail(clientId){
             </td>
             <td class="px-4 py-3 text-gray-600 align-top">${Number(e.hours).toFixed(1)}</td>
             <td class="px-4 py-3 text-gray-400 text-xs align-top">${esc(e.loggedBy||'—')}</td>
-            ${can('admin')?`<td class="px-4 py-3 text-gray-700 font-medium align-top">₹${amsEntryAmount(Number(e.hours),c.manDayRate||0).toLocaleString('en-IN',{maximumFractionDigits:0})}</td>`:''}
+            ${can('admin')?`<td class="px-4 py-3 text-gray-700 font-medium align-top">${t.hasBucket?'<span class="text-xs text-gray-400">pooled</span>':`₹${amsEntryAmount(Number(e.hours),c.manDayRate||0).toLocaleString('en-IN',{maximumFractionDigits:0})}`}</td>`:''}
             ${can('edit')?`<td class="px-4 py-3 align-top"><button data-act="edit-ams-entry" data-eid="${e.id}" class="text-xs text-gray-300 hover:text-[#0e7490]">Edit</button></td>`:''}
           </tr>`;
         }).join(''):`<tr><td colspan="${5+(can('admin')?1:0)+(can('edit')?1:0)}" class="text-center py-12 text-gray-400 text-sm">No hours logged yet</td></tr>`}
@@ -997,7 +1020,17 @@ function renderModal(){
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m2" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none"></textarea></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Man-Day Rate (₹) *</label><input id="m3" type="number" min="0" placeholder="e.g. 15000" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
       <p class="text-xs text-gray-400 mt-1">Required either way — applies to the selected client above too.</p></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours (optional)</label><input id="m4" type="number" min="0" step="0.5" placeholder="Leave blank for pure pay-per-hour" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+      <p class="text-xs text-gray-400 mt-1">If set, logged hours are deducted from this pool first — only hours beyond it get billed.</p></div>
     </div>`;
+  } else if(m.type==='edit-ams-client'){
+    title='Edit AMS Client';
+    body=`<div class="space-y-3">
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m1" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(m.description||'')}</textarea></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Man-Day Rate (₹) *</label><input id="m2" type="number" min="0" value="${m.manDayRate||''}" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours (optional)</label><input id="m3" type="number" min="0" step="0.5" value="${m.totalAvailableHours??''}" placeholder="Leave blank for pure pay-per-hour" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+    </div>`;
+    btnLabel='Save';
   } else if(m.type==='confirm'){
     title='Confirm';btnLabel='Delete';btnCls='bg-rose-600 hover:bg-rose-700';
     body=`<p class="text-sm text-gray-600">${esc(m.msg||'Are you sure? This cannot be undone.')}</p>`;
@@ -1148,7 +1181,7 @@ function exportPdf(clientId){
       const sizingStr=`Update:${updateDate?` (${updateDate})`:''}\n${updateText}\n\nNext:\n${nextText||'No next action noted.'}`;
       return{
         status:i.status,overdue,updateText,updateDate,nextText,
-        row:['',i.name,i.assignee||'Unassigned',i.status,overdue?`${dueCell}\n⚠ ${daysOverdue(i)}d overdue`:dueCell,sizingStr],
+        row:['',i.name,i.assignee||'Unassigned',i.status,overdue?`${dueCell}\n${daysOverdue(i)}d OVERDUE`:dueCell,sizingStr],
       };
     });
     doc.autoTable({
@@ -1258,7 +1291,7 @@ function exportAmsInvoicePdf(clientId){
     const{jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape',format:'a4',unit:'mm'});
     const W=297,H=210,NV=[13,61,79],MG=[181,23,158];
     const t=amsTotals(c,S.amsFrom,S.amsTo);
-    const periodLabel=(S.amsFrom||S.amsTo)?`${S.amsFrom?fmtDate(S.amsFrom):'Start'} – ${S.amsTo?fmtDate(S.amsTo):'Today'}`:'All Time';
+    const periodLabel=(S.amsFrom||S.amsTo)?`${S.amsFrom?fmtDate(S.amsFrom):'Start'} - ${S.amsTo?fmtDate(S.amsTo):'Today'}`:'All Time';
     const drawHeaderBar=()=>{
       doc.setFillColor(...NV);doc.rect(0,0,W,14,'F');
       doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text('AMS Work Summary & Internal Billing Breakdown',10,9.5);
@@ -1267,28 +1300,35 @@ function exportAmsInvoicePdf(clientId){
     drawHeaderBar();
     doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(100,116,139);
     doc.text(`Billing Period: ${periodLabel}`,10,21);
-    doc.text(`Day Rate: ₹${(c.manDayRate||0).toLocaleString('en-IN')} (${HOURS_PER_DAY}-hour day)`,10,26);
+    doc.text(`Day Rate: Rs. ${(c.manDayRate||0).toLocaleString('en-IN')} (${HOURS_PER_DAY}-hour day)`,10,26);
     doc.text(`Generated: ${new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'})}`,W-10,21,{align:'right'});
-    [{l:'Total Hours',v:t.totalHours.toFixed(1)},{l:'Total Days',v:(t.totalHours/HOURS_PER_DAY).toFixed(2)},{l:'Total Amount (₹)',v:t.totalAmount.toLocaleString('en-IN',{maximumFractionDigits:0})}]
-    .forEach((s,i)=>{const x=10+i*92;doc.setFillColor(...(i===2?MG:NV));doc.roundedRect(x,30,86,16,2,2,'F');doc.setFont('helvetica','bold');doc.setFontSize(15);doc.setTextColor(255,255,255);doc.text(String(s.v),x+6,40);doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.text(s.l,x+6,44.5);});
+    let boxY=30;
+    if(t.hasBucket){
+      [{l:'Total Available',v:`${t.totalAvailableHours.toFixed(1)} hrs`},{l:'Consumed (all-time)',v:`${t.consumedAllTime.toFixed(1)} hrs`},{l:'Balance Available',v:`${t.balanceAvailable.toFixed(1)} hrs`}]
+      .forEach((s,i)=>{const x=10+i*92;doc.setFillColor(...(i===2?(t.balanceAvailable>0?[34,197,94]:[190,24,93]):[100,116,139]));doc.roundedRect(x,boxY,86,16,2,2,'F');doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(255,255,255);doc.text(s.v,x+6,boxY+10);doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.text(s.l,x+6,boxY+14.5);});
+      boxY+=20;
+    }
+    [{l:'Hours This Period',v:t.totalHours.toFixed(1)},{l:'Total Days',v:(t.totalHours/HOURS_PER_DAY).toFixed(2)},{l:'Billable Amount (Rs.)',v:t.totalAmount.toLocaleString('en-IN',{maximumFractionDigits:0})}]
+    .forEach((s,i)=>{const x=10+i*92;doc.setFillColor(...(i===2?MG:NV));doc.roundedRect(x,boxY,86,16,2,2,'F');doc.setFont('helvetica','bold');doc.setFontSize(15);doc.setTextColor(255,255,255);doc.text(String(s.v),x+6,boxY+10);doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.text(s.l,x+6,boxY+14.5);});
+    const tableStartY=boxY+24;
     const sorted=[...t.log].sort((a,b)=>a.date.localeCompare(b.date));
     doc.autoTable({
-      startY:54,
+      startY:tableStartY,
       margin:{top:18,left:10,right:10,bottom:10},
-      head:[['Date','Category','Description','Hours','Amount (₹)']],
-      body:sorted.map(e=>[fmtDate(e.date),e.category,e.description||'—',Number(e.hours).toFixed(1),amsEntryAmount(Number(e.hours),c.manDayRate||0).toLocaleString('en-IN',{maximumFractionDigits:0})]),
+      head:[['Date','Category','Description','Hours','Amount (Rs.)']],
+      body:sorted.map(e=>[fmtDate(e.date),e.category,e.description||'-',Number(e.hours).toFixed(1),t.hasBucket?'Pooled':amsEntryAmount(Number(e.hours),c.manDayRate||0).toLocaleString('en-IN',{maximumFractionDigits:0})]),
       headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:9},
       styles:{fontSize:8.5,cellPadding:3},
       alternateRowStyles:{fillColor:[245,249,250]},
       columnStyles:{0:{cellWidth:28},1:{cellWidth:35},2:{cellWidth:'auto'},3:{cellWidth:22,halign:'right'},4:{cellWidth:30,halign:'right'}},
       didDrawPage:drawHeaderBar,
     });
-    const catRows=Object.entries(t.byCategory).map(([cat,hrs])=>[cat,hrs.toFixed(1),amsEntryAmount(hrs,c.manDayRate||0).toLocaleString('en-IN',{maximumFractionDigits:0})]);
+    const catRows=Object.entries(t.byCategory).map(([cat,hrs])=>[cat,hrs.toFixed(1),t.hasBucket?'Pooled':amsEntryAmount(hrs,c.manDayRate||0).toLocaleString('en-IN',{maximumFractionDigits:0})]);
     if(catRows.length){
       doc.autoTable({
         startY:doc.lastAutoTable.finalY+8,
         margin:{top:18,left:10,right:10,bottom:10},
-        head:[['Breakdown by Category','Hours','Amount (₹)']],
+        head:[['Breakdown by Category','Hours','Amount (Rs.)']],
         body:catRows,
         headStyles:{fillColor:[100,116,139],textColor:[255,255,255],fontStyle:'bold',fontSize:9},
         styles:{fontSize:8.5,cellPadding:3},
@@ -1297,7 +1337,7 @@ function exportAmsInvoicePdf(clientId){
       });
     }
     doc.setFont('helvetica','italic');doc.setFontSize(7.5);doc.setTextColor(156,163,175);
-    doc.text('For internal finance use. Pre-tax breakdown — GST and other taxes to be applied by finance separately.',10,H-6);
+    doc.text(t.hasBucket?'For internal finance use. Hours within the available pool are not separately billed - only usage beyond the pool is billed. Pre-tax breakdown - GST and other taxes to be applied by finance separately.':'For internal finance use. Pre-tax breakdown - GST and other taxes to be applied by finance separately.',10,H-6);
     doc.save(`${c.name}_AMS_Billing.pdf`);showToast('Invoice downloaded ✓');
   }catch(e){console.error(e);showToast('PDF failed: '+e.message,'error');}
 }
@@ -1534,6 +1574,10 @@ document.addEventListener('click',async e=>{
     const other=c.integrations.length>0||c.projects!==undefined;
     S.modal={type:'confirm',msg:other?`Remove "${c.name}" from AMS (all logged hours)? They'll stay in other sections. Cannot be undone.`:`Delete "${c.name}" entirely, including all logged hours? Cannot be undone.`,_act:'delete-ams-client',_id:c.id};render();return;
   }
+  if(act==='edit-ams-client'){
+    if(!can('admin'))return;const c=S.clients.find(x=>x.id===el.dataset.id);if(!c)return;
+    S.modal={type:'edit-ams-client',cid:c.id,description:c.description,manDayRate:c.manDayRate,totalAvailableHours:c.totalAvailableHours};render();return;
+  }
   if(act==='delete-user'){
     if(!can('admin'))return;const u=S.users.find(x=>x.id===el.dataset.uid);if(!u||u.id===S.user?.id)return;
     S.modal={type:'confirm',msg:`Delete user "${u.name}" (${u.username})?`,_act:'delete-user',_uid:u.id};render();return;
@@ -1647,22 +1691,38 @@ document.addEventListener('click',async e=>{
     } else if(m.type==='add-ams-client'){
       const existingId=document.getElementById('m0')?.value;
       const rate=parseFloat(document.getElementById('m3')?.value);
+      const availRaw=document.getElementById('m4')?.value;
+      const avail=availRaw?parseFloat(availRaw):undefined;
       if(!rate||rate<=0){showToast('A valid day rate is required','error');return;}
       if(existingId){
         const c=S.clients.find(x=>x.id===existingId);if(!c)return;
-        c.manDayRate=rate;c.workLog=c.workLog||[];S.modal={...m,busy:true};render();
+        c.manDayRate=rate;c.workLog=c.workLog||[];if(avail!==undefined)c.totalAvailableHours=avail;
+        S.modal={...m,busy:true};render();
         try{await saveClients(`Enable AMS: ${c.name}`);S.modal=null;showToast(`${c.name} added to AMS`);render();}
-        catch(err){delete c.manDayRate;S.modal=null;showToast('Failed: '+err.message,'error');render();}
+        catch(err){delete c.manDayRate;delete c.totalAvailableHours;S.modal=null;showToast('Failed: '+err.message,'error');render();}
       }else{
         const name=document.getElementById('m1')?.value.trim();
         if(!name){showToast('Pick a client above or enter a new name','error');return;}
         if(S.clients.find(x=>x.name.toLowerCase()===name.toLowerCase())){showToast(`"${name}" already exists — select it above instead`,'error');return;}
         const desc=document.getElementById('m2')?.value.trim();
         const nc={id:uid(),name,description:desc||'',createdAt:new Date().toISOString(),integrations:[],manDayRate:rate,workLog:[]};
+        if(avail!==undefined)nc.totalAvailableHours=avail;
         S.clients.push(nc);S.modal={...m,busy:true};render();
         try{await saveClients(`Add ${name}`);S.modal=null;showToast(`${name} added`);render();}
         catch(err){S.clients.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
       }
+    } else if(m.type==='edit-ams-client'){
+      const c=S.clients.find(x=>x.id===m.cid);if(!c)return;
+      const rate=parseFloat(document.getElementById('m2')?.value);
+      if(!rate||rate<=0){showToast('A valid day rate is required','error');return;}
+      const desc=document.getElementById('m1')?.value.trim();
+      const availRaw=document.getElementById('m3')?.value;
+      const snapshot={description:c.description,manDayRate:c.manDayRate,totalAvailableHours:c.totalAvailableHours};
+      c.description=desc||'';c.manDayRate=rate;
+      if(availRaw){c.totalAvailableHours=parseFloat(availRaw);}else{delete c.totalAvailableHours;}
+      S.modal={...m,busy:true};render();
+      try{await saveClients(`Edit AMS client: ${c.name}`);S.modal=null;showToast('Saved ✓');navigate('ams-client-detail',{clientId:c.id});}
+      catch(err){Object.assign(c,snapshot);if(snapshot.totalAvailableHours===undefined)delete c.totalAvailableHours;S.modal=null;showToast('Failed: '+err.message,'error');render();}
     }
   }
 });
