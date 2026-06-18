@@ -12,17 +12,38 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-*{font-family:'Poppins',sans-serif}
-[data-act]{cursor:pointer}
-.fade{animation:fi .15s ease}
+*{font-family:'Poppins',sans-serif;font-variant-numeric:tabular-nums}
+[data-act]{cursor:pointer;transition:transform .1s ease}
+[data-act]:not(input):not(select):not(textarea):active{transform:scale(.97)}
+.fade{animation:fi .18s ease}
 @keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.modal-pop{animation:mp .16s cubic-bezier(.2,.9,.3,1)}
+@keyframes mp{from{opacity:0;transform:scale(.96) translateY(6px)}to{opacity:1;transform:none}}
+.toast-in{animation:ti .22s cubic-bezier(.2,.9,.3,1)}
+@keyframes ti{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}
+.row-in{animation:ri .25s ease backwards}
+@keyframes ri{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+.card-hover{transition:transform .18s ease,box-shadow .18s ease}
+.card-hover:hover{transform:translateY(-2px);box-shadow:0 8px 20px -4px rgba(13,61,79,.12)}
+.bar-fill{transition:width .5s cubic-bezier(.3,.8,.4,1)}
+.pulse-dot{animation:pd 2s ease-in-out infinite}
+@keyframes pd{0%,100%{box-shadow:0 0 0 0 rgba(225,29,72,.4)}50%{box-shadow:0 0 0 4px rgba(225,29,72,0)}}
+.label-fade{transition:opacity .15s ease}
 .sidebar-scroll::-webkit-scrollbar{width:5px}
 .sidebar-scroll::-webkit-scrollbar-thumb{background:#1a6b8a40;border-radius:4px}
 th[data-sort]:hover{background:#f0f7f9}
+thead.sticky-head th{position:sticky;top:0;z-index:5}
 .brand-k{color:#0e7490}
 .brand-dot{color:#b5179e}
+.nav-active{background:linear-gradient(135deg,#0e7490,#0a5b73);color:#fff;box-shadow:0 2px 8px -1px rgba(14,116,144,.4)}
+.btn-grad{background:linear-gradient(135deg,#0e7490,#0a5b73)}
+.btn-grad:hover{background:linear-gradient(135deg,#0d3d4f,#082e3a)}
 #loading-bar{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,#0e7490,#b5179e);z-index:200;width:0%;opacity:0;transition:width .3s ease,opacity .2s ease}
 .btn-busy{pointer-events:none;opacity:.7}
+.skel{background:linear-gradient(90deg,#f1f5f6 25%,#e6edee 37%,#f1f5f6 63%);background-size:400% 100%;animation:skl 1.4s ease infinite}
+@keyframes skl{0%{background-position:100% 50%}100%{background-position:0% 50%}}
+@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+::view-transition-old(root),::view-transition-new(root){animation-duration:.2s;animation-timing-function:cubic-bezier(.2,.9,.3,1)}
 </style>
 </head>
 <body class="bg-[#f5f9fa] text-gray-900">
@@ -30,9 +51,10 @@ th[data-sort]:hover{background:#f0f7f9}
 <div id="app"></div>
 <script>
 // ─── STATE ────────────────────────────────────────────────────────
-const S={user:null,clients:[],users:[],shas:{clients:null,users:null},sessionToken:null,view:'login',params:{},adminTab:'integrations',filter:'all',search:'',modal:null,toast:null,sidebarCollapsed:false,sidebarClientsOpen:true,sort:{key:'name',dir:'asc'},editingTimelineId:null,expandedHistory:new Set(),amsFrom:'',amsTo:'',editingAmsEntryId:null,expandedAmsHistory:new Set()};
+const S={user:null,clients:[],users:[],shas:{clients:null,users:null},sessionToken:null,view:'login',params:{},adminTab:'integrations',filter:'all',search:'',modal:null,toast:null,sidebarCollapsed:false,sidebarClientsOpen:true,sort:{key:'name',dir:'asc'},editingTimelineId:null,expandedHistory:new Set(),amsFrom:'',amsTo:'',editingAmsEntryId:null,expandedAmsHistory:new Set(),cmdPaletteOpen:false,cmdQuery:'',recentlyViewed:[]};
 
 try{S.sidebarCollapsed=localStorage.getItem('itk_sb_collapsed')==='1';}catch(e){}
+try{const r=localStorage.getItem('itk_recent');if(r)S.recentlyViewed=JSON.parse(r);}catch(e){}
 
 // ─── CONSTANTS — KOGNOZ BRAND ─────────────────────────────────────
 const STATUSES=['Not Started','In Progress','At Risk','On Hold','Completed'];
@@ -52,7 +74,25 @@ function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function fmtDate(s){if(!s)return'—';try{return new Date(s).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});}catch{return s;}}
 function can(p){if(!S.user)return false;const r={admin:3,editor:2,viewer:1};return(r[S.user.role]||0)>=(r[p]||0);}
-function navigate(view,params={}){S.view=view;S.params=params;S.filter='all';S.search='';S.modal=null;S.sort={key:'name',dir:'asc'};S.editingTimelineId=null;S.expandedHistory=new Set();render();}
+function recordRecent(view,params){
+  let entry=null;
+  if(view==='client-detail'){const c=S.clients.find(x=>x.id===params.clientId);if(c)entry={type:'client',label:c.name,sub:'Integration Client',view,params:{clientId:c.id}};}
+  else if(view==='integ-detail'){const c=S.clients.find(x=>x.id===params.clientId);const i=c?.integrations.find(x=>x.id===params.integId);if(c&&i)entry={type:'integ',label:i.name,sub:`Integration · ${c.name}`,view,params:{clientId:c.id,integId:i.id}};}
+  else if(view==='impl-client-detail'){const c=S.clients.find(x=>x.id===params.clientId);if(c)entry={type:'implClient',label:c.name,sub:'Implementation Client',view,params:{clientId:c.id}};}
+  else if(view==='impl-project-detail'){const c=S.clients.find(x=>x.id===params.clientId);const p=c?.projects?.find(x=>x.id===params.projectId);if(c&&p)entry={type:'implProject',label:p.name,sub:`Implementation · ${c.name}`,view,params:{clientId:c.id,projectId:p.id}};}
+  else if(view==='ams-client-detail'){const c=S.clients.find(x=>x.id===params.clientId);if(c)entry={type:'amsClient',label:c.name,sub:'AMS Client',view,params:{clientId:c.id}};}
+  if(!entry)return;
+  const key=`${entry.view}:${entry.params.integId||entry.params.projectId||entry.params.clientId}`;
+  S.recentlyViewed=S.recentlyViewed.filter(r=>`${r.view}:${r.params.integId||r.params.projectId||r.params.clientId}`!==key);
+  S.recentlyViewed.unshift(entry);
+  S.recentlyViewed=S.recentlyViewed.slice(0,8);
+  try{localStorage.setItem('itk_recent',JSON.stringify(S.recentlyViewed));}catch(e){}
+}
+function navigate(view,params={}){
+  const isRealNav=S.view!==view;
+  const go=()=>{S.view=view;S.params=params;S.filter='all';S.search='';S.modal=null;S.sort={key:'name',dir:'asc'};S.editingTimelineId=null;S.expandedHistory=new Set();recordRecent(view,params);render();};
+  if(isRealNav&&document.startViewTransition)document.startViewTransition(go);else go();
+}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function daysDiff(dateStr){if(!dateStr)return null;const d=new Date(dateStr+'T00:00:00');const t=new Date(todayStr()+'T00:00:00');return Math.round((t-d)/86400000);}
 function isOverdue(i){if(i.status==='Completed'||!i.dueDate)return false;return daysDiff(i.dueDate)>0;}
@@ -61,14 +101,18 @@ function lastUpdateDate(i){return i.timeline?.[0]?.date||null;}
 function isStale(i,days=7){if(i.status==='Completed')return false;const lu=lastUpdateDate(i);if(!lu)return true;return daysDiff(lu)>=days;}
 function overdueBadge(i){if(!isOverdue(i))return'';const d=daysOverdue(i);return`<span class="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">⏰ ${d}d overdue</span>`;}
 function healthColor(c){const ar=c.integrations.filter(i=>i.status==='At Risk').length;const od=c.integrations.filter(isOverdue).length;if(ar>0||od>0)return'bg-rose-500';const oh=c.integrations.filter(i=>i.status==='On Hold').length;if(oh>0)return'bg-violet-400';return'bg-green-500';}
+function emptyIcon(type){const icons={search:'🔍',inbox:'📭',clock:'🕐',chart:'📊',doc:'📄',hours:'⏱️',team:'👥'};return`<div class="text-3xl mb-2 opacity-30">${icons[type]||'📭'}</div>`;}
 
 let _tt;
 function showToast(msg,type='success'){
   S.toast={msg,type};
   const el=document.getElementById('toast');
   const c={success:'bg-green-600',error:'bg-rose-600',info:'bg-[#0e7490]',warn:'bg-amber-600'};
-  if(el){el.className=`fixed bottom-5 right-5 z-[100] ${c[type]||c.info} text-white text-sm font-medium px-4 py-3 rounded-xl shadow-xl fade`;el.textContent=msg;el.style.display='block';}
-  else{const d=document.createElement('div');d.id='toast';d.className=`fixed bottom-5 right-5 z-[100] ${c[type]||c.info} text-white text-sm font-medium px-4 py-3 rounded-xl shadow-xl fade`;d.textContent=msg;document.body.appendChild(d);}
+  const icon={success:'✓',error:'✕',info:'ℹ',warn:'⚠'}[type]||'✓';
+  const cls=`fixed bottom-5 right-5 z-[100] ${c[type]||c.info} text-white text-sm font-medium px-4 py-3 rounded-xl shadow-xl toast-in flex items-center gap-2`;
+  const html=`<span class="text-base leading-none">${icon}</span><span>${esc(msg)}</span>`;
+  if(el){el.className=cls;el.innerHTML=html;el.style.display='flex';}
+  else{const d=document.createElement('div');d.id='toast';d.className=cls;d.innerHTML=html;document.body.appendChild(d);}
   if(_tt)clearTimeout(_tt);_tt=setTimeout(()=>{const x=document.getElementById('toast');if(x)x.style.display='none';},3500);
 }
 
@@ -137,6 +181,66 @@ function brandMark(big){
     <span class="text-[10px] font-medium text-gray-400 tracking-wide -mt-0.5">INTEGTRACK</span>
   </div>`;
 }
+let _cmdpResults=[];
+function renderCmdPalette(){
+  const q=S.cmdQuery.toLowerCase().trim();
+  const icon={client:'🔗',integ:'⚡',implClient:'🏗️',implProject:'🏗️',amsClient:'🧾'};
+  let list;
+  if(q){
+    const results=[];
+    S.clients.forEach(c=>{
+      if(c.name.toLowerCase().includes(q))results.push({type:'client',label:c.name,sub:'Integration Client',view:'client-detail',params:{clientId:c.id}});
+      (c.integrations||[]).forEach(i=>{if(i.name.toLowerCase().includes(q))results.push({type:'integ',label:i.name,sub:`Integration · ${c.name}`,view:'integ-detail',params:{clientId:c.id,integId:i.id}});});
+      if(c.projects!==undefined&&c.name.toLowerCase().includes(q))results.push({type:'implClient',label:c.name,sub:'Implementation Client',view:'impl-client-detail',params:{clientId:c.id}});
+      (c.projects||[]).forEach(p=>{if(p.name.toLowerCase().includes(q))results.push({type:'implProject',label:p.name,sub:`Implementation · ${c.name}`,view:'impl-project-detail',params:{clientId:c.id,projectId:p.id}});});
+      if(c.manDayRate!==undefined&&c.name.toLowerCase().includes(q))results.push({type:'amsClient',label:c.name,sub:'AMS Client',view:'ams-client-detail',params:{clientId:c.id}});
+    });
+    list=results.slice(0,20);
+  }else{
+    list=S.recentlyViewed.filter(r=>{
+      const c=S.clients.find(x=>x.id===r.params.clientId);if(!c)return false;
+      if(r.view==='integ-detail')return!!c.integrations.find(x=>x.id===r.params.integId);
+      if(r.view==='impl-project-detail')return!!c.projects?.find(x=>x.id===r.params.projectId);
+      return true;
+    });
+  }
+  _cmdpResults=list;
+  return`<div class="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-24 p-4 fade" id="cmdp-overlay">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg modal-pop overflow-hidden">
+      <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
+        <svg class="w-5 h-5 text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"/></svg>
+        <input id="cmdp-input" data-act="cmdp-input" type="text" value="${esc(S.cmdQuery)}" placeholder="Search clients, integrations, projects…" autocomplete="off" class="flex-1 text-sm outline-none"/>
+        <kbd class="text-[10px] text-gray-300 border border-gray-200 rounded px-1.5 py-0.5">Esc</kbd>
+      </div>
+      <div class="max-h-80 overflow-y-auto p-2">
+        ${!q&&!list.length?`<p class="text-sm text-gray-400 text-center py-8">${emptyIcon('search')}Start typing to search everything.</p>`:''}
+        ${!q&&list.length?`<div class="px-2 pt-1 pb-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Recently Viewed</div>`:''}
+        ${q&&!list.length?`<p class="text-sm text-gray-400 text-center py-8">${emptyIcon('search')}No matches for "${esc(S.cmdQuery)}"</p>`:''}
+        ${list.map((r,idx)=>`<button data-act="cmdp-go" data-idx="${idx}" style="animation-delay:${idx*15}ms" class="row-in w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left hover:bg-[#0e7490]/8 transition-colors">
+          <span class="text-base shrink-0">${icon[r.type]||'📄'}</span>
+          <div class="min-w-0 flex-1"><div class="text-sm font-medium text-gray-800 truncate">${esc(r.label)}</div><div class="text-xs text-gray-400 truncate">${esc(r.sub||'')}</div></div>
+        </button>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+function renderAppSkeleton(){
+  return`<aside class="fixed inset-y-0 left-0 bg-white border-r border-gray-100 z-40 flex flex-col" style="width:15.5rem">
+    <div class="flex items-center px-4 h-16 border-b border-gray-100 shrink-0">${brandMark(true)}</div>
+    <div class="flex-1 px-2.5 py-4 space-y-2">${[1,2,3,4].map(()=>`<div class="skel rounded-xl h-9"></div>`).join('')}</div>
+  </aside>
+  <main class="min-h-screen" style="margin-left:15.5rem">
+    <div class="max-w-7xl mx-auto px-6 py-7">
+      <div class="skel rounded-lg h-7 w-48 mb-2"></div>
+      <div class="skel rounded-lg h-4 w-72 mb-6"></div>
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">${[1,2,3,4,5].map(()=>`<div class="skel rounded-2xl h-20"></div>`).join('')}</div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="skel rounded-2xl h-64"></div>
+        <div class="skel rounded-2xl h-64"></div>
+      </div>
+    </div>
+  </main>`;
+}
 
 // ─── RENDER ───────────────────────────────────────────────────────
 function render(){
@@ -155,7 +259,7 @@ function render(){
   else if(S.view==='ams-client-detail')content=renderAmsClientDetail(S.params.clientId);
   else if(S.view==='admin')content=can('admin')?renderAdmin():`<div class="p-8 text-rose-500">Access denied</div>`;
   const sbw=S.sidebarCollapsed?'4.2rem':'15.5rem';
-  app.innerHTML=`${renderSidebar()}<main class="min-h-screen transition-all" style="margin-left:${sbw}">${content}</main>${S.modal?renderModal():''}`;
+  app.innerHTML=`${renderSidebar()}<main class="min-h-screen transition-all" style="margin-left:${sbw}">${content}</main>${S.modal?renderModal():''}${S.cmdPaletteOpen?renderCmdPalette():''}`;
 }
 
 function renderSidebar(){
@@ -167,33 +271,42 @@ function renderSidebar(){
     if(v==='ams')return['ams-clients','ams-client-detail'].includes(S.view);
     return S.view===v;
   };
-  const navItem=(view,label,icon,extra='')=>`<button data-act="nav-${view}" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${isActive(view)?'bg-[#0e7490] text-white shadow-sm':'text-gray-600 hover:bg-[#0e7490]/10'} ${extra}">
-    <span class="shrink-0">${icon}</span>${collapsed?'':`<span class="truncate">${label}</span>`}
+  const navItem=(view,label,icon,extra='')=>`<button data-act="nav-${view}" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${isActive(view)?'nav-active':'text-gray-600 hover:bg-[#0e7490]/10'} ${extra}">
+    <span class="shrink-0">${icon}</span><span class="truncate label-fade overflow-hidden ${collapsed?'opacity-0 w-0':'opacity-100'}" title="${label}">${label}</span>
   </button>`;
+  const groupLabel=text=>collapsed?'':`<div class="px-3 pt-3 pb-1 text-[10px] font-semibold text-gray-300 uppercase tracking-wider label-fade">${text}</div>`;
   return`<aside class="fixed inset-y-0 left-0 bg-white border-r border-gray-100 z-40 flex flex-col transition-all" style="width:${w}">
   <div class="flex items-center ${collapsed?'justify-center':'justify-between'} px-4 h-16 border-b border-gray-100 shrink-0">
     ${collapsed?`<span class="text-xl font-extrabold brand-k">k</span>`:brandMark(true)}
   </div>
-  <nav class="flex-1 overflow-y-auto sidebar-scroll px-2.5 py-4 space-y-1">
+  <div class="px-2.5 pt-3">
+    <button data-act="cmdp-open" class="w-full flex items-center gap-2 ${collapsed?'justify-center px-0':'px-3'} py-2 rounded-xl border border-gray-100 text-gray-400 hover:border-[#0e7490]/30 hover:text-[#0e7490] hover:bg-[#0e7490]/5 transition-colors text-xs">
+      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"/></svg>
+      ${collapsed?'':`<span class="flex-1 text-left label-fade">Search</span><kbd class="text-[10px] border border-gray-200 rounded px-1 py-0.5 label-fade">⌘K</kbd>`}
+    </button>
+  </div>
+  <nav class="flex-1 overflow-y-auto sidebar-scroll px-2.5 py-3 space-y-1">
     ${navItem('dashboard','Dashboard',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10M9 21h6"/></svg>`)}
+    ${groupLabel('Trackers')}
     ${navItem('clients','Integrations',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>`)}
-    ${!collapsed?`<div class="pt-2">
+    ${!collapsed?`<div class="pt-1">
       <button data-act="toggle-clients-list" class="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide hover:text-gray-600">
         <span>Clients</span><span class="transition-transform ${S.sidebarClientsOpen?'rotate-90':''}">›</span>
       </button>
-      ${S.sidebarClientsOpen?`<div class="space-y-0.5 mt-1">${S.clients.map(c=>`<button data-act="open-client" data-id="${c.id}" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition ${S.params.clientId===c.id?'bg-[#0e7490]/10 text-[#0e7490]':'text-gray-500 hover:bg-gray-50'}">
-        <span class="w-1.5 h-1.5 rounded-full shrink-0 ${healthColor(c)}"></span><span class="truncate">${esc(c.name)}</span>
-      </button>`).join('')}</div>`:''}
+      ${S.sidebarClientsOpen?`<div class="space-y-0.5 mt-1">${S.clients.map(c=>{const hc=healthColor(c);return`<button data-act="open-client" data-id="${c.id}" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition ${S.params.clientId===c.id?'bg-[#0e7490]/10 text-[#0e7490]':'text-gray-500 hover:bg-gray-50'}">
+        <span class="w-2 h-2 rounded-full shrink-0 ${hc}${hc==='bg-rose-500'?' pulse-dot':''}" title="${esc(c.name)}"></span><span class="truncate" title="${esc(c.name)}">${esc(c.name)}</span>
+      </button>`;}).join('')}</div>`:''}
     </div>`:''}
-    ${navItem('impl','Implementations',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>`,'mt-2')}
+    ${navItem('impl','Implementations',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>`)}
     ${navItem('ams','AMS',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 2v8m0 0v2m0-2c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`)}
-    ${can('admin')?navItem('admin','Admin',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`,'mt-2'):''}
+    ${can('admin')?groupLabel('System'):''}
+    ${can('admin')?navItem('admin','Admin',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`):''}
   </nav>
   <div class="border-t border-gray-100 p-2.5 shrink-0">
     ${!collapsed?`<div class="flex items-center gap-2 px-2 py-2 mb-1">
       <div class="w-8 h-8 rounded-full bg-[#0e7490] text-white flex items-center justify-center text-xs font-bold shrink-0">${esc((S.user?.name||'?')[0])}</div>
       <div class="min-w-0 flex-1">
-        <div class="text-xs font-semibold text-gray-800 truncate">${esc(S.user?.name)}</div>
+        <div class="text-xs font-semibold text-gray-800 truncate" title="${esc(S.user?.name)}">${esc(S.user?.name)}</div>
         <div class="text-[10px] text-gray-400 capitalize">${esc(S.user?.role)}</div>
       </div>
     </div>`:''}
@@ -237,7 +350,7 @@ function renderLogin(){
       <div><label class="block text-xs font-medium text-gray-500 mb-1.5">Password</label>
         <input id="lp" type="password" autocomplete="current-password" placeholder="••••••••" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div id="lerr" class="hidden text-xs text-rose-500 text-center bg-rose-50 py-2 rounded-lg px-3"></div>
-      <button data-act="login" class="w-full bg-[#0e7490] text-white font-semibold rounded-xl py-2.5 text-sm hover:bg-[#0d3d4f] transition-colors">Sign In</button>
+      <button data-act="login" class="w-full btn-grad text-white font-semibold rounded-xl py-2.5 text-sm transition-colors">Sign In</button>
     </div>
     <div class="flex justify-center mt-6">${encBadge()}</div>
   </div>
@@ -257,22 +370,76 @@ function renderDashboard(){
   const thisWeekUpdates=all.reduce((n,i)=>n+(i.timeline||[]).filter(t=>new Date(t.date)>=weekAgo).length,0);
   const needsAttn=[...overdue.map(i=>({...i,reason:'overdue'})),...stale.map(i=>({...i,reason:'stale'}))].sort((a,b)=>(a.reason==='overdue'&&b.reason!=='overdue')?-1:1);
 
+  const implClients=S.clients.filter(c=>c.projects!==undefined);
+  const allProjects=implClients.flatMap(c=>(c.projects||[]).map(p=>({...p,clientName:c.name,clientId:c.id})));
+  const allPhases=allProjects.flatMap(p=>(p.modules||[]).flatMap(m=>(m.phases||[]).map(ph=>({...ph}))));
+  const implTotalPhases=allPhases.length;
+  const implAtRiskProjects=allProjects.filter(p=>implProgress(p).atRisk>0);
+  const implActiveProjects=allProjects.filter(p=>implProgress(p).pct<100);
+
+  const amsClients=S.clients.filter(c=>c.manDayRate!==undefined);
+  const now=new Date();
+  const monthStart=new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);
+  const monthEnd=todayStr();
+  let amsHoursThisMonth=0,amsAmountThisMonth=0;
+  const amsLowBalance=[];
+  amsClients.forEach(c=>{
+    const tm=amsTotals(c,monthStart,monthEnd);
+    amsHoursThisMonth+=tm.totalHours;amsAmountThisMonth+=tm.totalAmount;
+    if(tm.hasBucket&&tm.balanceAvailable<=Math.max(2,tm.totalAvailableHours*0.15)){amsLowBalance.push({name:c.name,id:c.id,balance:tm.balanceAvailable,total:tm.totalAvailableHours});}
+  });
+
   return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
   <h1 class="text-2xl font-bold text-gray-900 mb-1">Dashboard</h1>
   <p class="text-sm text-gray-400 mb-6">Overview across all clients and integrations</p>
 
-  <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
     ${[['Clients',S.clients.length,'text-[#0e7490]','bg-[#0e7490]/10'],['Total Integrations',ti,'text-gray-700','bg-gray-100'],['In Progress',ip,'text-[#0e7490]','bg-cyan-50'],['At Risk',ar,'text-rose-600','bg-rose-50'],['Updates this week',thisWeekUpdates,'text-violet-600','bg-violet-50']]
-    .map(([l,v,tc,bg])=>`<div class="${bg} rounded-2xl p-4"><div class="text-2xl font-bold ${tc}">${v}</div><div class="text-xs text-gray-500 mt-0.5">${l}</div></div>`).join('')}
+    .map(([l,v,tc,bg],idx)=>`<div style="animation-delay:${idx*30}ms" class="row-in ${bg} rounded-2xl p-4"><div class="text-2xl font-extrabold ${tc}">${v}</div><div class="text-xs text-gray-500 mt-0.5">${l}</div></div>`).join('')}
+  </div>
+
+  <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Across Your Trackers</h2>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+    <div class="bg-white rounded-2xl border border-gray-100 p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-gray-900 text-sm">Implementations</h3>
+        <button data-act="nav-impl" class="text-xs text-[#0e7490] hover:underline font-medium">View all →</button>
+      </div>
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <div><div class="text-xl font-extrabold text-gray-700">${implActiveProjects.length}</div><div class="text-xs text-gray-500">Active Projects</div></div>
+        <div><div class="text-xl font-extrabold ${implAtRiskProjects.length?'text-rose-600':'text-gray-700'}">${implAtRiskProjects.length}</div><div class="text-xs text-gray-500">Need Attention</div></div>
+      </div>
+      ${implTotalPhases?`<div class="flex gap-0.5 h-2.5 rounded-full overflow-hidden bg-gray-100 mb-1">
+        ${STATUSES.map(s=>{const n=allPhases.filter(ph=>ph.status===s).length;return n?`<div class="${SDOT[s]} bar-fill" style="width:${Math.round(n/implTotalPhases*100)}%" title="${s}: ${n}"></div>`:'';}).join('')}
+      </div>
+      <div class="text-xs text-gray-400 mb-1">${implTotalPhases} phases tracked across ${implClients.length} client${implClients.length!==1?'s':''}</div>`:`<div class="text-xs text-gray-400 text-center py-3">${emptyIcon('chart')}No implementation data yet.</div>`}
+      ${implAtRiskProjects.length?`<div class="space-y-1.5 mt-3 pt-3 border-t border-gray-50">${implAtRiskProjects.slice(0,3).map((p,idx)=>`<div data-act="open-impl-project" data-cid="${p.clientId}" data-pid="${p.id}" style="animation-delay:${idx*25}ms" class="row-in flex items-center justify-between text-xs cursor-pointer hover:bg-rose-50 -mx-1 px-1 py-1 rounded-lg text-rose-600 transition-colors">
+        <span class="truncate" title="${esc(p.clientName)} · ${esc(p.name)}">${esc(p.clientName)} · ${esc(p.name)}</span><span class="shrink-0">⚠</span>
+      </div>`).join('')}</div>`:''}
+    </div>
+
+    <div class="bg-white rounded-2xl border border-gray-100 p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-gray-900 text-sm">AMS &amp; Support</h3>
+        <button data-act="nav-ams" class="text-xs text-[#0e7490] hover:underline font-medium">View all →</button>
+      </div>
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <div><div class="text-xl font-extrabold text-gray-700">${amsHoursThisMonth.toFixed(1)}</div><div class="text-xs text-gray-500">Hours This Month</div></div>
+        ${can('admin')?`<div><div class="text-xl font-extrabold text-[#0e7490]">₹${amsAmountThisMonth.toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="text-xs text-gray-500">Billable This Month</div></div>`:`<div><div class="text-xl font-extrabold text-gray-700">${amsClients.length}</div><div class="text-xs text-gray-500">Active Clients</div></div>`}
+      </div>
+      ${amsLowBalance.length?`<div class="space-y-1.5 pt-1">${amsLowBalance.slice(0,3).map((c,idx)=>`<div data-act="open-ams-client" data-id="${c.id}" style="animation-delay:${idx*25}ms" class="row-in flex items-center justify-between text-xs cursor-pointer hover:bg-rose-50 -mx-1 px-1 py-1 rounded-lg text-rose-600 transition-colors">
+        <span class="truncate" title="${esc(c.name)}">${esc(c.name)} pool running low</span><span class="shrink-0">${c.balance.toFixed(1)}/${c.total.toFixed(1)}h</span>
+      </div>`).join('')}</div>`:amsClients.length?`<p class="text-xs text-gray-400 text-center py-2">All hour pools healthy ✓</p>`:`<div class="text-xs text-gray-400 text-center py-3">${emptyIcon('hours')}No AMS clients yet.</div>`}
+    </div>
   </div>
 
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
     <div class="bg-white rounded-2xl border border-gray-100 p-5">
       <h3 class="font-semibold text-gray-900 text-sm mb-4 flex items-center gap-2">⚠️ Needs Attention <span class="text-xs font-normal text-gray-400">(${needsAttn.length})</span></h3>
       <div class="space-y-2 max-h-80 overflow-y-auto pr-1">
-        ${needsAttn.length?needsAttn.slice(0,12).map(i=>`<div data-act="open-integ" data-cid="${i.clientId}" data-iid="${i.id}" class="flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-gray-50 cursor-pointer border border-gray-50">
+        ${needsAttn.length?needsAttn.slice(0,12).map((i,idx)=>`<div data-act="open-integ" data-cid="${i.clientId}" data-iid="${i.id}" style="animation-delay:${Math.min(idx*20,250)}ms" class="row-in flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-gray-50 cursor-pointer border border-gray-50 transition-colors">
           <div class="min-w-0 flex-1">
-            <div class="text-sm font-medium text-gray-800 truncate">${esc(i.name)}</div>
+            <div class="text-sm font-medium text-gray-800 truncate" title="${esc(i.name)}">${esc(i.name)}</div>
             <div class="text-xs text-gray-400">${esc(i.clientName)} · ${esc(i.assignee||'Unassigned')}</div>
           </div>
           ${i.reason==='overdue'?overdueBadge(i):`<span class="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full whitespace-nowrap">No update ${lastUpdateDate(i)?daysDiff(lastUpdateDate(i))+'d':''}</span>`}
@@ -283,15 +450,15 @@ function renderDashboard(){
     <div class="bg-white rounded-2xl border border-gray-100 p-5">
       <h3 class="font-semibold text-gray-900 text-sm mb-4">Status by Client</h3>
       <div class="space-y-3.5 max-h-80 overflow-y-auto pr-1">
-        ${S.clients.map(c=>{
+        ${S.clients.map((c,idx)=>{
           const tot=c.integrations.length||1;
-          return`<div data-act="open-client" data-id="${c.id}" class="cursor-pointer group">
+          return`<div data-act="open-client" data-id="${c.id}" style="animation-delay:${Math.min(idx*20,250)}ms" class="row-in cursor-pointer group hover:bg-gray-50 -mx-1.5 px-1.5 py-1 rounded-lg transition-colors">
             <div class="flex items-center justify-between text-xs mb-1">
-              <span class="font-medium text-gray-700 group-hover:text-[#0e7490] truncate">${esc(c.name)}</span>
+              <span class="font-medium text-gray-700 group-hover:text-[#0e7490] truncate" title="${esc(c.name)}">${esc(c.name)}</span>
               <span class="text-gray-400">${c.integrations.length}</span>
             </div>
             <div class="flex gap-0.5 h-2.5 rounded-full overflow-hidden bg-gray-100">
-              ${STATUSES.map(s=>{const n=c.integrations.filter(i=>i.status===s).length;return n?`<div class="${SDOT[s]}" style="width:${Math.round(n/tot*100)}%" title="${s}: ${n}"></div>`:'';}).join('')}
+              ${STATUSES.map(s=>{const n=c.integrations.filter(i=>i.status===s).length;return n?`<div class="${SDOT[s]} bar-fill" style="width:${Math.round(n/tot*100)}%" title="${s}: ${n}"></div>`:'';}).join('')}
             </div>
           </div>`;
         }).join('')}
@@ -305,7 +472,7 @@ function renderDashboard(){
   <div class="bg-white rounded-2xl border border-gray-100 p-5">
     <h3 class="font-semibold text-gray-900 text-sm mb-4">Overall Status Distribution</h3>
     <div class="flex gap-1.5 h-4 rounded-full overflow-hidden bg-gray-100 mb-3">
-      ${STATUSES.map(s=>{const n=all.filter(i=>i.status===s).length;return n?`<div class="${SDOT[s]}" style="width:${Math.round(n/(ti||1)*100)}%" title="${s}: ${n}"></div>`:'';}).join('')}
+      ${STATUSES.map(s=>{const n=all.filter(i=>i.status===s).length;return n?`<div class="${SDOT[s]} bar-fill" style="width:${Math.round(n/(ti||1)*100)}%" title="${s}: ${n}"></div>`:'';}).join('')}
     </div>
     <div class="flex flex-wrap gap-4">
       ${STATUSES.map(s=>{const n=all.filter(i=>i.status===s).length;return`<span class="flex items-center gap-1.5 text-xs text-gray-600"><span class="w-2.5 h-2.5 rounded-full ${SDOT[s]}"></span>${s}: <b>${n}</b></span>`;}).join('')}
@@ -329,18 +496,18 @@ function renderClientList(){
     <h1 class="text-xl font-bold text-gray-900">Clients</h1>
     <div class="flex items-center gap-2">
       <input id="search-inp" data-act="search" type="text" placeholder="Search clients…" value="${esc(S.search)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
-      <button data-act="modal-open" data-modal="add-client" class="whitespace-nowrap bg-[#0e7490] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">+ Add Client</button>
+      <button data-act="modal-open" data-modal="add-client" class="whitespace-nowrap btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Client</button>
     </div>
   </div>
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-    ${fl.length?fl.map(c=>{
+    ${fl.length?fl.map((c,idx)=>{
       const ar2=c.integrations.filter(i=>i.status==='At Risk').length;
       const od2=c.integrations.filter(isOverdue).length;
-      return`<div data-act="open-client" data-id="${c.id}" class="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md hover:border-[#0e7490]/30 transition cursor-pointer relative overflow-hidden">
+      return`<div data-act="open-client" data-id="${c.id}" style="animation-delay:${Math.min(idx*35,400)}ms" class="row-in card-hover bg-white rounded-2xl border border-gray-100 p-5 hover:border-[#0e7490]/30 transition cursor-pointer relative overflow-hidden">
         <div class="absolute left-0 top-0 bottom-0 w-1 ${healthColor(c)}"></div>
         <div class="flex items-start justify-between mb-3 pl-1.5">
-          <div class="flex-1 min-w-0 pr-2"><div class="font-semibold text-gray-900">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 mt-0.5 truncate">${esc(c.description)}</div>`:''}</div>
-          <span class="text-2xl font-bold text-[#0e7490] opacity-60 shrink-0">${c.integrations.length}</span>
+          <div class="flex-1 min-w-0 pr-2"><div class="font-semibold text-gray-900" title="${esc(c.name)}">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 mt-0.5 truncate" title="${esc(c.description)}">${esc(c.description)}</div>`:''}</div>
+          <span class="text-2xl font-extrabold text-[#0e7490] opacity-60 shrink-0">${c.integrations.length}</span>
         </div>
         <div class="flex gap-1 mb-3 h-1.5 pl-1.5">${sBar(c.integrations)}</div>
         <div class="flex flex-wrap gap-x-3 gap-y-1 mb-2 pl-1.5">${sCounts(c.integrations)}</div>
@@ -349,7 +516,7 @@ function renderClientList(){
           ${od2>0?`<span class="text-xs font-medium text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1 inline-block">⏰ ${od2} overdue</span>`:''}
         </div>
       </div>`;
-    }).join(''):`<div class="col-span-3 text-center py-16 text-gray-400">No clients match "${esc(S.search)}"</div>`}
+    }).join(''):`<div class="col-span-3 text-center py-16 text-gray-400">${emptyIcon('search')}No clients match "${esc(S.search)}"</div>`}
   </div>
 </div>`;
 }
@@ -370,21 +537,21 @@ function renderImplClientList(){
   </div>
   <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
     <h1 class="text-xl font-bold text-gray-900">Implementations</h1>
-    <button data-act="modal-open" data-modal="add-impl-client" class="bg-[#0e7490] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">+ Add Client</button>
+    <button data-act="modal-open" data-modal="add-impl-client" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Client</button>
   </div>
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-    ${implClients.length?implClients.map(c=>{
+    ${implClients.length?implClients.map((c,idx)=>{
       const projs=c.projects||[];
       const anyRisk=projs.some(p=>implProgress(p).atRisk>0);
-      return`<div data-act="open-impl-client" data-id="${c.id}" class="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md hover:border-[#0e7490]/30 transition cursor-pointer relative overflow-hidden">
+      return`<div data-act="open-impl-client" data-id="${c.id}" style="animation-delay:${Math.min(idx*35,400)}ms" class="row-in card-hover bg-white rounded-2xl border border-gray-100 p-5 hover:border-[#0e7490]/30 transition cursor-pointer relative overflow-hidden">
         <div class="absolute left-0 top-0 bottom-0 w-1 ${anyRisk?'bg-rose-500':'bg-green-500'}"></div>
         <div class="flex items-start justify-between mb-2 pl-1.5">
-          <div class="flex-1 min-w-0 pr-2"><div class="font-semibold text-gray-900">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 mt-0.5 truncate">${esc(c.description)}</div>`:''}</div>
-          <span class="text-2xl font-bold text-[#0e7490] opacity-60 shrink-0">${projs.length}</span>
+          <div class="flex-1 min-w-0 pr-2"><div class="font-semibold text-gray-900" title="${esc(c.name)}">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 mt-0.5 truncate" title="${esc(c.description)}">${esc(c.description)}</div>`:''}</div>
+          <span class="text-2xl font-extrabold text-[#0e7490] opacity-60 shrink-0">${projs.length}</span>
         </div>
         <div class="text-xs text-gray-400 pl-1.5">${projs.length} project${projs.length!==1?'s':''}</div>
       </div>`;
-    }).join(''):`<div class="col-span-3 text-center py-16 text-gray-400">No implementation clients yet. Add one to get started.</div>`}
+    }).join(''):`<div class="col-span-3 text-center py-16 text-gray-400">${emptyIcon('inbox')}No implementation clients yet. Add one to get started.</div>`}
   </div>
 </div>`;
 }
@@ -399,7 +566,7 @@ function renderImplClientDetail(clientId){
   </div>
   <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
     <div><h1 class="text-xl font-bold text-gray-900">${esc(c.name)}</h1>${c.description?`<p class="text-sm text-gray-400 mt-0.5">${esc(c.description)}</p>`:''}</div>
-    <button data-act="modal-open" data-modal="add-impl-project" data-cid="${c.id}" class="bg-[#0e7490] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">+ Add Project</button>
+    <button data-act="modal-open" data-modal="add-impl-project" data-cid="${c.id}" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Project</button>
   </div>
   <div class="space-y-3">
     ${(c.projects||[]).length?c.projects.map(p=>{
@@ -417,7 +584,7 @@ function renderImplClientDetail(clientId){
           <span class="text-xs text-gray-400 shrink-0">${pr.pct}% complete</span>
         </div>
       </div>`;
-    }).join(''):`<div class="text-center py-16 text-gray-400">No projects yet for this client.</div>`}
+    }).join(''):`<div class="text-center py-16 text-gray-400">${emptyIcon('inbox')}No projects yet for this client.</div>`}
   </div>
 </div>`;
 }
@@ -438,13 +605,13 @@ function renderImplProjectDetail(clientId,projectId){
     </div>
     <div class="flex gap-2">
       <button data-act="modal-open" data-modal="add-impl-module" data-cid="${c.id}" data-pid="${p.id}" class="bg-green-50 border border-green-200 text-green-700 text-xs font-medium px-3 py-2 rounded-xl hover:bg-green-100 transition">+ Add Module</button>
-      <button data-act="exp-impl-pdf" data-cid="${c.id}" data-pid="${p.id}" class="bg-[#0e7490] text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">📄 Export PDF</button>
+      <button data-act="exp-impl-pdf" data-cid="${c.id}" data-pid="${p.id}" class="btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">📄 Export PDF</button>
       ${can('admin')?`<button data-act="delete-impl-project" data-cid="${c.id}" data-pid="${p.id}" class="text-rose-400 hover:text-rose-600 text-xs px-2">Delete</button>`:''}
     </div>
   </div>
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden overflow-x-auto">
     <table class="w-full text-sm">
-      <thead class="border-b border-gray-100 bg-gray-50">
+      <thead class="border-b border-gray-100 bg-gray-50 sticky-head">
         <tr><th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide sticky left-0 bg-gray-50">Module</th>
         ${PHASES.map(ph=>`<th class="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">${ph}</th>`).join('')}</tr>
       </thead>
@@ -479,7 +646,7 @@ function renderImplPhaseDetail(clientId,projectId,moduleId,phaseName){
     <button data-act="nav-impl" class="hover:text-[#0e7490]">Implementations</button><span>›</span>
     <button data-act="open-impl-client" data-id="${c.id}" class="hover:text-[#0e7490]">${esc(c.name)}</button><span>›</span>
     <button data-act="open-impl-project" data-cid="${c.id}" data-pid="${p.id}" class="hover:text-[#0e7490]">${esc(p.name)}</button><span>›</span>
-    <span class="text-gray-900 font-medium truncate max-w-xs">${esc(mod.name)} · ${esc(phaseName)}</span>
+    <span class="text-gray-900 font-medium truncate max-w-xs" title="${esc(mod.name)} · ${esc(phaseName)}">${esc(mod.name)} · ${esc(phaseName)}</span>
   </div>
   <div class="flex items-center gap-3 mb-2 flex-wrap">
     <h1 class="text-xl font-bold text-gray-900">${esc(mod.name)} — ${esc(phaseName)}</h1>${sbadge(ph.status)}
@@ -499,7 +666,7 @@ function renderImplPhaseDetail(clientId,projectId,moduleId,phaseName){
           ${can('edit')?`<input id="ip-target" type="date" value="${esc(ph.targetDate||'')}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`:
           `<p class="text-sm text-gray-700">${fmtDate(ph.targetDate)}</p>`}
         </div>
-        ${can('edit')?`<button data-act="save-impl-phase" data-cid="${c.id}" data-pid="${p.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" class="w-full bg-[#0e7490] text-white font-semibold rounded-xl py-2.5 text-sm hover:bg-[#0d3d4f] transition">Save Changes</button>`:''}
+        ${can('edit')?`<button data-act="save-impl-phase" data-cid="${c.id}" data-pid="${p.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" class="w-full btn-grad text-white font-semibold rounded-xl py-2.5 text-sm transition">Save Changes</button>`:''}
       </div>
     </div>
     <div class="bg-white rounded-2xl border border-gray-100 p-6">
@@ -511,7 +678,7 @@ function renderImplPhaseDetail(clientId,projectId,moduleId,phaseName){
         <button data-act="add-impl-update" data-cid="${c.id}" data-pid="${p.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" class="w-full text-sm font-medium bg-gray-50 hover:bg-[#0e7490]/10 hover:text-[#0e7490] text-gray-700 border border-gray-200 rounded-xl py-2 transition">+ Add Update</button>
       </div>`:''}
       <div class="space-y-3 max-h-[440px] overflow-y-auto pr-1">
-        ${!ph.updates.length?`<p class="text-sm text-gray-400 text-center py-8">No updates yet</p>`:
+        ${!ph.updates.length?`<div class="text-sm text-gray-400 text-center py-8">${emptyIcon('clock')}No updates yet</div>`:
         ph.updates.map((t,idx,arr)=>{
           const isEditing=S.editingTimelineId===t.id;
           const hasHistory=t.edits&&t.edits.length>0;
@@ -580,19 +747,19 @@ function renderAmsClientList(){
   return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
   <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
     <h1 class="text-xl font-bold text-gray-900">AMS &amp; Support Retainers</h1>
-    ${can('admin')?`<button data-act="modal-open" data-modal="add-ams-client" class="bg-[#0e7490] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">+ Add Client</button>`:''}
+    ${can('admin')?`<button data-act="modal-open" data-modal="add-ams-client" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Client</button>`:''}
   </div>
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-    ${(()=>{const amsClients=S.clients.filter(c=>c.manDayRate!==undefined);return amsClients.length?amsClients.map(c=>{
+    ${(()=>{const amsClients=S.clients.filter(c=>c.manDayRate!==undefined);return amsClients.length?amsClients.map((c,idx)=>{
       const t=amsTotals(c,'','');
-      return`<div data-act="open-ams-client" data-id="${c.id}" class="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md hover:border-[#0e7490]/30 transition cursor-pointer">
-        <div class="font-semibold text-gray-900 mb-1">${esc(c.name)}</div>
-        ${c.description?`<div class="text-xs text-gray-400 mb-3">${esc(c.description)}</div>`:''}
+      return`<div data-act="open-ams-client" data-id="${c.id}" style="animation-delay:${Math.min(idx*35,400)}ms" class="row-in card-hover bg-white rounded-2xl border border-gray-100 p-5 hover:border-[#0e7490]/30 transition cursor-pointer">
+        <div class="font-semibold text-gray-900 mb-1" title="${esc(c.name)}">${esc(c.name)}</div>
+        ${c.description?`<div class="text-xs text-gray-400 mb-3 truncate" title="${esc(c.description)}">${esc(c.description)}</div>`:''}
         <div class="text-xs text-gray-500">${t.totalHours.toFixed(1)} hours logged total</div>
         ${can('admin')?`<div class="text-xs text-gray-400 mt-1">₹${(c.manDayRate||0).toLocaleString('en-IN')}/day rate</div>`:''}
         ${t.hasBucket?`<div class="text-xs mt-1 ${t.balanceAvailable>0?'text-green-600':'text-rose-600'} font-medium">${t.balanceAvailable.toFixed(1)} / ${t.totalAvailableHours.toFixed(1)} hrs available</div>`:''}
       </div>`;
-    }).join(''):`<div class="col-span-3 text-center py-16 text-gray-400">No AMS clients yet.</div>`;})()}
+    }).join(''):`<div class="col-span-3 text-center py-16 text-gray-400">${emptyIcon('hours')}No AMS clients yet.</div>`;})()}
   </div>
 </div>`;
 }
@@ -622,7 +789,7 @@ function renderAmsClientDetail(clientId){
       <input id="ams-hours" type="number" step="0.5" min="0" placeholder="Hours" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
       <input id="ams-desc" type="text" placeholder="Description" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
     </div>
-    <button data-act="log-ams-hours" data-cid="${c.id}" class="w-full bg-[#0e7490] text-white font-semibold rounded-xl py-2.5 text-sm hover:bg-[#0d3d4f] transition">+ Add Entry</button>
+    <button data-act="log-ams-hours" data-cid="${c.id}" class="w-full btn-grad text-white font-semibold rounded-xl py-2.5 text-sm transition">+ Add Entry</button>
   </div>`:''}
   ${can('admin')?`<div class="bg-white rounded-2xl border border-gray-100 p-5 mb-6">
     <h3 class="font-semibold text-gray-900 text-sm mb-3">Billing</h3>
@@ -634,7 +801,7 @@ function renderAmsClientDetail(clientId){
     <div class="flex flex-wrap items-end gap-3 mb-4">
       <div><label class="block text-xs text-gray-400 mb-1">From</label><input id="ams-from" data-act="ams-range" type="date" value="${esc(S.amsFrom)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs text-gray-400 mb-1">To</label><input id="ams-to" data-act="ams-range" type="date" value="${esc(S.amsTo)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
-      <button data-act="exp-ams-invoice" data-cid="${c.id}" class="bg-[#0e7490] text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">📄 Export Invoice PDF</button>
+      <button data-act="exp-ams-invoice" data-cid="${c.id}" class="btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">📄 Export Invoice PDF</button>
     </div>
     <div class="grid grid-cols-3 gap-4 mb-4">
       <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">${t.totalHours.toFixed(1)}</div><div class="text-xs text-gray-500">Hours This Period${t.hasBucket?` (${t.coveredHours.toFixed(1)} covered)`:''}</div></div>
@@ -647,7 +814,7 @@ function renderAmsClientDetail(clientId){
   </div>`:''}
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <table class="w-full text-sm">
-      <thead class="border-b border-gray-100 bg-gray-50"><tr>
+      <thead class="border-b border-gray-100 bg-gray-50 sticky-head"><tr>
         ${['Date','Category','Description','Hours','Logged By',...(can('admin')?['Amount']:[]),...(can('edit')?['Actions']:[])].map(h=>`<th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}
       </tr></thead>
       <tbody class="divide-y divide-gray-50">
@@ -718,7 +885,7 @@ function renderClientDetail(clientId){
   <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
     <div><h1 class="text-xl font-bold text-gray-900">${esc(c.name)}</h1>${c.description?`<p class="text-sm text-gray-400 mt-0.5">${esc(c.description)}</p>`:''}</div>
     <div class="relative group">
-      <button class="flex items-center gap-1.5 bg-[#0e7490] text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">
+      <button class="flex items-center gap-1.5 btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Export ▾
       </button>
       <div class="absolute right-0 top-full mt-1 bg-white border border-gray-100 rounded-xl shadow-xl w-44 py-1 hidden group-hover:block z-10">
@@ -733,14 +900,14 @@ function renderClientDetail(clientId){
   </div>
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <table class="w-full text-sm">
-      <thead class="border-b border-gray-100 bg-gray-50">
+      <thead class="border-b border-gray-100 bg-gray-50 sticky-head">
         <tr>${cols.map(([k,l])=>`<th data-act="sort" data-key="${k}" data-sort class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer transition select-none">${l} ${sortArrow(k)}</th>`).join('')}</tr>
       </thead>
       <tbody class="divide-y divide-gray-50">
         ${sorted.length?sorted.map(i=>{
           const lu=lastUpdateDate(i);
           return`<tr data-act="open-integ" data-cid="${c.id}" data-iid="${i.id}" class="hover:bg-gray-50/60 cursor-pointer transition">
-          <td class="px-4 py-3"><div class="font-medium text-gray-900">${esc(i.name)}</div>${i.description?`<div class="text-xs text-gray-400 truncate max-w-xs">${esc(i.description)}</div>`:''}</td>
+          <td class="px-4 py-3"><div class="font-medium text-gray-900" title="${esc(i.name)}">${esc(i.name)}</div>${i.description?`<div class="text-xs text-gray-400 truncate max-w-xs" title="${esc(i.description)}">${esc(i.description)}</div>`:''}</td>
           <td class="px-4 py-3">${sbadge(i.status)}</td>
           <td class="px-4 py-3 text-gray-600">${esc(i.assignee||'—')}</td>
           <td class="px-4 py-3"><div class="flex flex-col gap-1"><span class="text-gray-600">${fmtDate(i.dueDate)}</span>${overdueBadge(i)}</div></td>
@@ -761,7 +928,7 @@ function renderIntegDetail(clientId,integId){
   <div class="flex items-center gap-2 text-sm text-gray-400 mb-4">
     <button data-act="nav-clients" class="hover:text-[#0e7490]">Clients</button><span>›</span>
     <button data-act="open-client" data-id="${c.id}" class="hover:text-[#0e7490]">${esc(c.name)}</button><span>›</span>
-    <span class="text-gray-900 font-medium truncate max-w-xs">${esc(i.name)}</span>
+    <span class="text-gray-900 font-medium truncate max-w-xs" title="${esc(i.name)}">${esc(i.name)}</span>
   </div>
   <div class="flex items-center gap-3 mb-2 flex-wrap">
     <h1 class="text-xl font-bold text-gray-900">${esc(i.name)}</h1>${sbadge(i.status)}${overdueBadge(i)}
@@ -789,7 +956,7 @@ function renderIntegDetail(clientId,integId){
           ${can('edit')?`<textarea id="f-next" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(i.nextAction||'')}</textarea>`:
           `<p class="text-sm text-gray-700">${esc(i.nextAction||'—')}</p>`}
         </div>
-        ${can('edit')?`<button data-act="save-integ" data-cid="${c.id}" data-iid="${i.id}" class="w-full bg-[#0e7490] text-white font-semibold rounded-xl py-2.5 text-sm hover:bg-[#0d3d4f] transition">Save Changes</button>`:''}
+        ${can('edit')?`<button data-act="save-integ" data-cid="${c.id}" data-iid="${i.id}" class="w-full btn-grad text-white font-semibold rounded-xl py-2.5 text-sm transition">Save Changes</button>`:''}
         ${can('edit')&&i.status!=='Completed'?`<button data-act="mark-complete" data-cid="${c.id}" data-iid="${i.id}" class="w-full text-green-700 bg-green-50 hover:bg-green-100 font-medium rounded-xl py-2 text-xs transition">✓ Mark as Complete</button>`:''}
         ${can('admin')?`<button data-act="delete-integ" data-cid="${c.id}" data-iid="${i.id}" class="w-full text-rose-400 hover:text-rose-600 text-xs py-1 transition">Delete Integration</button>`:''}
       </div>
@@ -803,7 +970,7 @@ function renderIntegDetail(clientId,integId){
         <button data-act="add-timeline" data-cid="${c.id}" data-iid="${i.id}" class="w-full text-sm font-medium bg-gray-50 hover:bg-[#0e7490]/10 hover:text-[#0e7490] text-gray-700 border border-gray-200 rounded-xl py-2 transition">+ Add Update</button>
       </div>`:''}
       <div class="space-y-3 max-h-[440px] overflow-y-auto pr-1">
-        ${!(i.timeline?.length)?`<p class="text-sm text-gray-400 text-center py-8">No updates yet</p>`:
+        ${!(i.timeline?.length)?`<div class="text-sm text-gray-400 text-center py-8">${emptyIcon('clock')}No updates yet</div>`:
         i.timeline.map((t,idx,arr)=>{
           const isEditing=S.editingTimelineId===t.id;
           const hasHistory=t.edits&&t.edits.length>0;
@@ -858,17 +1025,17 @@ function renderAdmin(){
 function renderAdminImpl(){
   const implClients=S.clients.filter(c=>c.projects!==undefined);
   return`<div>
-  <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-impl-client" class="bg-[#0e7490] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">+ Add Client</button></div>
+  <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-impl-client" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Client</button></div>
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <table class="w-full text-sm">
-      <thead class="border-b border-gray-100 bg-gray-50"><tr>
+      <thead class="border-b border-gray-100 bg-gray-50 sticky-head"><tr>
         ${['Client','Projects','At Risk Modules','Actions'].map(h=>`<th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}
       </tr></thead>
       <tbody class="divide-y divide-gray-50">
         ${implClients.length?implClients.map(c=>{
           const risk=(c.projects||[]).reduce((a,p)=>a+implProgress(p).atRisk,0);
           return`<tr class="hover:bg-gray-50/50 transition">
-          <td class="px-4 py-3"><div class="font-medium text-gray-900">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 truncate max-w-[180px]">${esc(c.description)}</div>`:''}</td>
+          <td class="px-4 py-3"><div class="font-medium text-gray-900" title="${esc(c.name)}">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 truncate max-w-[180px]" title="${esc(c.description)}">${esc(c.description)}</div>`:''}</td>
           <td class="px-4 py-3 font-semibold text-gray-700">${(c.projects||[]).length}</td>
           <td class="px-4 py-3">${risk>0?`<span class="text-rose-600 font-semibold">${risk}</span>`:`<span class="text-gray-400">0</span>`}</td>
           <td class="px-4 py-3"><div class="flex gap-2">
@@ -885,17 +1052,17 @@ function renderAdminImpl(){
 function renderAdminAms(){
   const amsClients=S.clients.filter(c=>c.manDayRate!==undefined);
   return`<div>
-  <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-ams-client" class="bg-[#0e7490] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">+ Add Client</button></div>
+  <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-ams-client" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Client</button></div>
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <table class="w-full text-sm">
-      <thead class="border-b border-gray-100 bg-gray-50"><tr>
+      <thead class="border-b border-gray-100 bg-gray-50 sticky-head"><tr>
         ${['Client','Day Rate','Total Hours Logged','Actions'].map(h=>`<th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}
       </tr></thead>
       <tbody class="divide-y divide-gray-50">
         ${amsClients.length?amsClients.map(c=>{
           const t=amsTotals(c,'','');
           return`<tr class="hover:bg-gray-50/50 transition">
-          <td class="px-4 py-3"><div class="font-medium text-gray-900">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 truncate max-w-[180px]">${esc(c.description)}</div>`:''}</td>
+          <td class="px-4 py-3"><div class="font-medium text-gray-900" title="${esc(c.name)}">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 truncate max-w-[180px]" title="${esc(c.description)}">${esc(c.description)}</div>`:''}</td>
           <td class="px-4 py-3 font-semibold text-gray-700">₹${(c.manDayRate||0).toLocaleString('en-IN')}</td>
           <td class="px-4 py-3 text-gray-600">${t.totalHours.toFixed(1)}</td>
           <td class="px-4 py-3"><button data-act="delete-ams-client" data-id="${c.id}" class="text-xs text-rose-400 hover:text-rose-600 font-medium">Remove from AMS</button></td>
@@ -908,15 +1075,15 @@ function renderAdminAms(){
 
 function renderAdminClients(){
   return`<div>
-  <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-client" class="bg-[#0e7490] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">+ Add Client</button></div>
+  <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-client" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Client</button></div>
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <table class="w-full text-sm">
-      <thead class="border-b border-gray-100 bg-gray-50"><tr>
+      <thead class="border-b border-gray-100 bg-gray-50 sticky-head"><tr>
         ${['Client','Integrations','At Risk','Completed','Actions'].map(h=>`<th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}
       </tr></thead>
       <tbody class="divide-y divide-gray-50">
         ${S.clients.map(c=>`<tr class="hover:bg-gray-50/50 transition">
-          <td class="px-4 py-3"><div class="font-medium text-gray-900">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 truncate max-w-[180px]">${esc(c.description)}</div>`:''}</td>
+          <td class="px-4 py-3"><div class="font-medium text-gray-900" title="${esc(c.name)}">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 truncate max-w-[180px]" title="${esc(c.description)}">${esc(c.description)}</div>`:''}</td>
           <td class="px-4 py-3 font-semibold text-gray-700">${c.integrations.length}</td>
           <td class="px-4 py-3">${c.integrations.filter(i=>i.status==='At Risk').length>0?`<span class="text-rose-600 font-semibold">${c.integrations.filter(i=>i.status==='At Risk').length}</span>`:`<span class="text-gray-400">0</span>`}</td>
           <td class="px-4 py-3">${c.integrations.filter(i=>i.status==='Completed').length>0?`<span class="text-green-600 font-semibold">${c.integrations.filter(i=>i.status==='Completed').length}</span>`:`<span class="text-gray-400">0</span>`}</td>
@@ -933,10 +1100,10 @@ function renderAdminClients(){
 
 function renderAdminUsers(){
   return`<div>
-  <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-user" class="bg-[#0e7490] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#0d3d4f] transition">+ Add User</button></div>
+  <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-user" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add User</button></div>
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <table class="w-full text-sm">
-      <thead class="border-b border-gray-100 bg-gray-50"><tr>
+      <thead class="border-b border-gray-100 bg-gray-50 sticky-head"><tr>
         ${['Username','Name','Role','Actions'].map(h=>`<th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}
       </tr></thead>
       <tbody class="divide-y divide-gray-50">
@@ -958,7 +1125,7 @@ function renderAdminUsers(){
 // ─── MODAL ────────────────────────────────────────────────────────
 function renderModal(){
   const m=S.modal;if(!m)return'';
-  let title='',body='',btnLabel='Create',btnCls='bg-[#0e7490] hover:bg-[#0d3d4f]';
+  let title='',body='',btnLabel='Create',btnCls='btn-grad';
   if(m.type==='add-client'){
     title='Add Client';
     body=`<div class="space-y-3">
@@ -1038,7 +1205,7 @@ function renderModal(){
   const busy=!!m.busy;
   const busyLabel=m.type==='confirm'?'Deleting…':'Saving…';
   return`<div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 fade" id="modal-overlay">
-  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 modal-pop">
     <div class="flex items-center justify-between mb-5">
       <h2 class="font-bold text-gray-900">${esc(title)}</h2>
       <button data-act="modal-close" ${busy?'disabled class="text-gray-200 text-xl leading-none cursor-not-allowed"':'class="text-gray-400 hover:text-gray-600 text-xl leading-none"'}>✕</button>
@@ -1345,6 +1512,7 @@ function exportAmsInvoicePdf(clientId){
 // ─── EVENTS ───────────────────────────────────────────────────────
 document.addEventListener('click',async e=>{
   if(e.target.id==='modal-overlay'&&e.target===e.currentTarget){if(S.modal?.busy)return;S.modal=null;render();return;}
+  if(e.target.id==='cmdp-overlay'){S.cmdPaletteOpen=false;render();return;}
   const el=e.target.closest('[data-act]');if(!el)return;
   const act=el.dataset.act;
 
@@ -1362,8 +1530,9 @@ document.addEventListener('click',async e=>{
       if(!lr.ok){clearBtnBusy(el);const e2=document.getElementById('lerr');if(e2){e2.textContent=ld.error||'Login failed';e2.classList.remove('hidden');}return;}
     }catch(err){clearBtnBusy(el);const e2=document.getElementById('lerr');if(e2){e2.textContent='Connection failed. Check repo/env setup.';e2.classList.remove('hidden');}return;}
     S.sessionToken=ld.token;S.user=ld.user;S.shas.users=ld.usersSha;
+    document.getElementById('app').innerHTML=renderAppSkeleton();
     try{const cl=await apiRead('data/clients.json');S.clients=cl.content;S.shas.clients=cl.sha;}
-    catch(err){clearBtnBusy(el);const e2=document.getElementById('lerr');if(e2){e2.textContent='Loaded user but failed to load clients.';e2.classList.remove('hidden');}return;}
+    catch(err){S.user=null;S.sessionToken=null;render();const e2=document.getElementById('lerr');if(e2){e2.textContent='Loaded user but failed to load clients.';e2.classList.remove('hidden');}return;}
     if(can('admin')){try{const us=await apiRead('data/users.json');S.users=us.content;S.shas.users=us.sha;}catch(err){S.users=[S.user];}}
     else{S.users=[S.user];}
     navigate('dashboard');return;
@@ -1375,6 +1544,11 @@ document.addEventListener('click',async e=>{
   if(act==='nav-ams'){navigate('ams-clients');return;}
   if(act==='nav-admin'){if(can('admin'))navigate('admin');return;}
   if(act==='toggle-sidebar'){S.sidebarCollapsed=!S.sidebarCollapsed;try{localStorage.setItem('itk_sb_collapsed',S.sidebarCollapsed?'1':'0');}catch(e){}render();return;}
+  if(act==='cmdp-open'){S.cmdPaletteOpen=true;S.cmdQuery='';render();setTimeout(()=>document.getElementById('cmdp-input')?.focus(),30);return;}
+  if(act==='cmdp-go'){
+    const r=_cmdpResults[Number(el.dataset.idx)];if(!r)return;
+    S.cmdPaletteOpen=false;navigate(r.view,r.params);return;
+  }
   if(act==='toggle-clients-list'){S.sidebarClientsOpen=!S.sidebarClientsOpen;render();return;}
   if(act==='open-client'){navigate('client-detail',{clientId:el.dataset.id});return;}
   if(act==='open-integ'){navigate('integ-detail',{clientId:el.dataset.cid,integId:el.dataset.iid});return;}
@@ -1745,16 +1919,24 @@ document.addEventListener('change',async e=>{
 });
 
 let _st;
+let _ct;
 document.addEventListener('input',e=>{
   if(e.target.dataset?.act==='search'){
     clearTimeout(_st);const v=e.target.value;
     _st=setTimeout(()=>{S.search=v;render();setTimeout(()=>{const el=document.getElementById('search-inp');if(el){el.focus();try{el.setSelectionRange(v.length,v.length);}catch{}}},10);},120);
   }
+  if(e.target.dataset?.act==='cmdp-input'){
+    clearTimeout(_ct);const v=e.target.value;
+    _ct=setTimeout(()=>{S.cmdQuery=v;render();setTimeout(()=>{const el=document.getElementById('cmdp-input');if(el){el.focus();try{el.setSelectionRange(v.length,v.length);}catch{}}},10);},100);
+  }
 });
 
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&S.view==='login')document.querySelector('[data-act="login"]')?.click();
-  if(e.key==='Escape'&&S.modal&&!S.modal.busy){S.modal=null;render();}
+  if(e.key==='Escape'&&S.modal&&!S.modal.busy){S.modal=null;render();return;}
+  if(e.key==='Escape'&&S.cmdPaletteOpen){S.cmdPaletteOpen=false;render();return;}
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'&&S.user){e.preventDefault();S.cmdPaletteOpen=!S.cmdPaletteOpen;S.cmdQuery='';render();if(S.cmdPaletteOpen)setTimeout(()=>document.getElementById('cmdp-input')?.focus(),30);return;}
+  if(S.cmdPaletteOpen&&e.key==='Enter'){const first=document.querySelector('[data-act="cmdp-go"][data-idx="0"]');first?.click();return;}
 });
 
 // ─── INIT ─────────────────────────────────────────────────────────
