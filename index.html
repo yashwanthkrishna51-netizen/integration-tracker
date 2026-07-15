@@ -648,6 +648,7 @@ function renderImplClientDetail(clientId){
               <button data-act="open-impl-phase" data-cid="${c.id}" data-mid="${m.id}" data-phase="${esc(phName)}" class="w-full">
                 ${sbadge(ph.status)}
                 ${ph.updates?.length?`<div class="text-[10px] text-gray-400 mt-0.5">${ph.updates.length} update${ph.updates.length!==1?'s':''}</div>`:''}
+                ${ph.assignee?`<div class="text-[10px] text-gray-400 truncate mt-0.5" title="${esc(ph.assignee)}">${esc(ph.assignee)}</div>`:''}
               </button>
             </td>`;
           }).join('')}
@@ -680,6 +681,10 @@ function renderImplPhaseDetail(clientId,moduleId,phaseName){
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Status</label>
           ${can('edit')?`<select id="ip-status" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${STATUSES.map(s=>`<option${s===ph.status?' selected':''}>${s}</option>`).join('')}</select>`:sbadge(ph.status)}
         </div>
+        <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Assignee</label>
+          ${can('edit')?`<input id="ip-assignee" type="text" value="${esc(ph.assignee||'')}" placeholder="Who is responsible for this phase?" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`:
+          `<p class="text-sm text-gray-700">${esc(ph.assignee||'—')}</p>`}
+        </div>
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Start Date</label>
           ${can('edit')?`<input id="ip-start" type="date" value="${esc(ph.startDate||'')}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`:
           `<p class="text-sm text-gray-700">${fmtDate(ph.startDate)}</p>`}
@@ -687,6 +692,14 @@ function renderImplPhaseDetail(clientId,moduleId,phaseName){
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Target Date</label>
           ${can('edit')?`<input id="ip-target" type="date" value="${esc(ph.targetDate||'')}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`:
           `<p class="text-sm text-gray-700">${fmtDate(ph.targetDate)}</p>`}
+        </div>
+        <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Current Activity</label>
+          ${can('edit')?`<textarea id="ip-activity" rows="3" placeholder="What is currently happening in this phase?" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(ph.currentActivity||'')}</textarea>`:
+          `<p class="text-sm text-gray-700 leading-relaxed">${esc(ph.currentActivity||'—')}</p>`}
+        </div>
+        <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Next Action</label>
+          ${can('edit')?`<textarea id="ip-next" rows="2" placeholder="What is the next planned step?" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(ph.nextAction||'')}</textarea>`:
+          `<p class="text-sm text-gray-700">${esc(ph.nextAction||'—')}</p>`}
         </div>
         ${can('edit')?`<button data-act="save-impl-phase" data-cid="${c.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" class="w-full btn-grad text-white font-semibold rounded-xl py-2.5 text-sm transition">Save Changes</button>`:''}
       </div>
@@ -1454,7 +1467,8 @@ function exportImplPdf(clientId){
       const row=[m.name];
       PHASES.forEach(phName=>{
         const ph=(m.phases||[]).find(x=>x.name===phName)||{status:'Not Started'};
-        row.push(ph.status+(ph.targetDate?`\n${fmtDate(ph.targetDate)}`:''));
+        const cell=ph.status+(ph.targetDate?`\n${fmtDate(ph.targetDate)}`:'')+(ph.assignee?`\n${ph.assignee}`:'');
+        row.push(cell);
       });
       return row;
     });
@@ -1487,10 +1501,13 @@ function exportImplPdf(clientId){
         const updateText=latest?latest.update:'No updates yet.';
         const updateDate=latest?fmtDate(latest.date):'';
         const updateCount=(ph.updates||[]).length;
-        const sizingStr=`Update:${updateDate?` (${updateDate})`:''}\n${updateText}\n${updateCount>1?`(+${updateCount-1} more update${updateCount-1!==1?'s':''})`:''}`;
+        const nextText=ph.nextAction||'';
+        const actText=ph.currentActivity||'';
+        const sizingStr=`Update:${updateDate?` (${updateDate})`:''}\n${updateText}\n\nNext:\n${nextText||'No next action noted.'}`;
         detailRows.push({
           isHeader:false,moduleName:m.name,phaseName:phName,
-          status:ph.status,updateText,updateDate,updateCount,
+          status:ph.status,updateText,updateDate,updateCount,nextText,actText,
+          assignee:ph.assignee||'',
           startDate:ph.startDate?fmtDate(ph.startDate):'-',
           targetDate:ph.targetDate?fmtDate(ph.targetDate):'-',
           row:['',phName,ph.status,ph.startDate?fmtDate(ph.startDate):'-',ph.targetDate?fmtDate(ph.targetDate):'-',sizingStr],
@@ -1500,7 +1517,7 @@ function exportImplPdf(clientId){
     doc.autoTable({
       startY:16,
       margin:{top:16,left:10,right:10,bottom:10},
-      head:[['','Phase','Status','Start Date','Target Date','Latest Update']],
+      head:[['','Phase','Status','Start Date','Target Date','Latest Update & Next Action']],
       body:detailRows.map(d=>d.row),
       headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:9},
       styles:{fontSize:8,cellPadding:3,valign:'top'},
@@ -1530,9 +1547,15 @@ function exportImplPdf(clientId){
         doc.setFont('helvetica','normal');doc.setTextColor(75,85,99);
         const updLines=doc.splitTextToSize(meta.updateText,maxW);
         doc.text(updLines,x,y);y+=updLines.length*lh;
-        if(meta.updateCount>1){
+        y+=lh;
+        doc.setFont('helvetica','bold');doc.setTextColor(31,41,55);
+        doc.text('Next:',x,y);y+=lh;
+        if(meta.nextText){
+          doc.setFont('helvetica','normal');doc.setTextColor(75,85,99);
+          doc.text(doc.splitTextToSize(meta.nextText,maxW),x,y);
+        }else{
           doc.setFont('helvetica','italic');doc.setTextColor(156,163,175);
-          doc.text(`+${meta.updateCount-1} more update${meta.updateCount-1!==1?'s':''}`,x,y);
+          doc.text('No next action noted.',x,y);
         }
       },
       didDrawPage:()=>{
@@ -1739,8 +1762,11 @@ document.addEventListener('click',async e=>{
     const ph=idx>=0?mod.phases[idx]:{name:phaseName,status:'Not Started',startDate:'',targetDate:'',updates:[]};
     const prev={...ph};
     ph.status=document.getElementById('ip-status')?.value||ph.status;
+    ph.assignee=document.getElementById('ip-assignee')?.value?.trim()||'';
     ph.startDate=document.getElementById('ip-start')?.value||'';
     ph.targetDate=document.getElementById('ip-target')?.value||'';
+    ph.currentActivity=document.getElementById('ip-activity')?.value?.trim()||'';
+    ph.nextAction=document.getElementById('ip-next')?.value?.trim()||'';
     if(idx>=0)mod.phases[idx]=ph;else mod.phases.push(ph);
     setBtnBusy(el,'Saving…');
     try{await saveClients(`Update ${phaseName}: ${mod.name}`);showToast('Saved ✓');navigate('impl-phase-detail',{clientId:cid,moduleId:mid,phase:phaseName});}
