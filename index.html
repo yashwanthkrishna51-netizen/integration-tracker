@@ -665,7 +665,12 @@ function renderImplClientDetail(clientId){
       </thead>
       <tbody class="divide-y divide-gray-50">
         ${(c.modules||[]).length?(c.modules||[]).map(m=>`<tr>
-          <td class="px-4 py-3 font-medium text-gray-900 whitespace-nowrap sticky left-0 bg-white">${esc(m.name)}</td>
+          <td class="px-4 py-3 font-medium text-gray-900 whitespace-nowrap sticky left-0 bg-white">
+            <div class="flex items-center justify-between gap-2">
+              <span>${esc(m.name)}</span>
+              ${can('admin')?`<button data-act="delete-impl-module" data-cid="${c.id}" data-mid="${m.id}" title="Delete module" class="text-gray-200 hover:text-rose-500 transition text-sm leading-none shrink-0">✕</button>`:''}
+            </div>
+          </td>
           ${PHASES.map(phName=>{
             const ph=(m.phases||[]).find(x=>x.name===phName)||{name:phName,status:'Not Started',updates:[]};
             return`<td class="px-2 py-2 text-center">
@@ -734,6 +739,10 @@ function renderImplPhaseDetail(clientId,moduleId,phaseName){
       </div>
       ${can('edit')?`<div class="mb-4">
         <textarea id="ip-update-input" rows="3" placeholder="What happened? Current status?" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none mb-2"></textarea>
+        <div class="grid grid-cols-2 gap-2 mb-2">
+          <input id="ip-attach-label" type="text" placeholder="Link label e.g. Signoff Mail (optional)" class="border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+          <input id="ip-attach-url" type="url" placeholder="Paste SharePoint / URL (optional)" class="border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+        </div>
         <button data-act="add-impl-update" data-cid="${c.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" class="w-full text-sm font-medium bg-gray-50 hover:bg-[#0e7490]/10 hover:text-[#0e7490] text-gray-700 border border-gray-200 rounded-xl py-2 transition">+ Add Update</button>
       </div>`:''}
       <div class="space-y-3 max-h-[440px] overflow-y-auto pr-1">
@@ -746,7 +755,11 @@ function renderImplPhaseDetail(clientId,moduleId,phaseName){
             return`<div class="relative pl-5 ${idx<arr.length-1?'pb-3 border-l-2 border-gray-100':''}">
               <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 bg-[#0e7490] rounded-full border-2 border-white ring-1 ring-[#0e7490]/30"></div>
               <div class="text-xs font-semibold text-[#0e7490] mb-1">${esc(t.date)} · ${esc(t.addedBy||'')}</div>
-              <textarea id="edit-tl-${t.id}" rows="3" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(t.update)}</textarea>
+              <textarea id="edit-tl-${t.id}" rows="3" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none mb-2">${esc(t.update)}</textarea>
+              <div class="grid grid-cols-2 gap-2 mb-2">
+                <input id="eat-label-${t.id}" type="text" placeholder="Link label (optional)" value="${esc(t.attachment?.label||'')}" class="border border-gray-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+                <input id="eat-url-${t.id}" type="url" placeholder="Paste URL (optional)" value="${esc(t.attachment?.url||'')}" class="border border-gray-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+              </div>
               <div class="flex gap-2 mt-2">
                 <button data-act="cancel-edit-timeline" class="flex-1 text-xs font-medium text-gray-500 border border-gray-200 rounded-lg py-1.5 hover:bg-gray-50 transition">Cancel</button>
                 <button data-act="save-edit-impl-update" data-cid="${c.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" data-tid="${t.id}" class="flex-1 text-xs font-semibold text-white bg-[#0e7490] rounded-lg py-1.5 hover:bg-[#0d3d4f] transition">Save Edit</button>
@@ -759,10 +772,12 @@ function renderImplPhaseDetail(clientId,moduleId,phaseName){
             <div class="text-xs font-semibold text-[#0e7490] mb-1">${esc(t.date)} · ${esc(t.addedBy||'')}</div>
             <div class="flex items-center gap-2 shrink-0">
               ${can('edit')?`<button data-act="edit-timeline" data-tid="${t.id}" class="text-[10px] text-gray-300 hover:text-[#0e7490]">Edit</button>`:''}
+              ${can('admin')?`<button data-act="delete-impl-update" data-cid="${c.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" data-tid="${t.id}" class="text-[10px] text-gray-300 hover:text-rose-500">Delete</button>`:''}
               <button data-act="copy-update" data-text="${esc(t.update)}" class="text-[10px] text-gray-300 hover:text-[#0e7490]">Copy</button>
             </div>
           </div>
           <p class="text-sm text-gray-700 leading-relaxed">${esc(t.update)}</p>
+          ${t.attachment?.url?`<a href="${esc(t.attachment.url)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-[11px] text-[#0e7490] hover:underline mt-1 bg-[#0e7490]/8 px-2 py-0.5 rounded-full">🔗 ${esc(t.attachment.label||'Attachment')}</a>`:''}
           <div class="flex items-center gap-3 mt-1 flex-wrap">
             ${t.addedAt?`<span class="text-xs text-gray-400">${fmtDate(t.addedAt)}</span>`:''}
             ${hasHistory?`<button data-act="toggle-history" data-tid="${t.id}" class="text-xs text-amber-600 hover:text-amber-700 font-medium">✎ edited${t.edits.length>1?` (${t.edits.length}×)`:''} — ${isExpanded?'hide':'view'} history</button>`:''}
@@ -902,7 +917,7 @@ function renderAmsClientDetail(clientId){
             <td class="px-3 py-2 text-xs text-gray-600 max-w-[160px]">${esc(e.solution||'—')}</td>
             <td class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">${esc(e.modeOfSupport||'—')}</td>
             <td class="px-3 py-2 text-gray-700 font-medium text-xs text-right">${Number(e.hours||0).toFixed(1)}</td>
-            ${can('edit')?`<td class="px-3 py-2"><button data-act="edit-ams-entry" data-cid="${c.id}" data-eid="${e.id}" class="text-xs text-gray-300 hover:text-[#0e7490]">Edit</button></td>`:''}
+            ${can('edit')?`<td class="px-3 py-2"><div class="flex gap-2"><button data-act="edit-ams-entry" data-cid="${c.id}" data-eid="${e.id}" class="text-xs text-gray-300 hover:text-[#0e7490]">Edit</button>${can('admin')?`<button data-act="delete-ams-entry" data-cid="${c.id}" data-eid="${e.id}" class="text-xs text-gray-300 hover:text-rose-500">Delete</button>`:''}</div></td>`:''}
           </tr>`;
         }).join(''):`<tr><td colspan="${COLS.length+(can('edit')?1:0)}" class="text-center py-12 text-gray-400 text-sm">${emptyIcon('hours')}No entries yet. Add one to get started.</td></tr>`}
       </tbody>
@@ -1047,6 +1062,7 @@ function renderIntegDetail(clientId,integId){
             <div class="text-xs font-semibold text-[#0e7490] mb-1">${esc(t.date)} · ${esc(t.addedBy||'')}</div>
             <div class="flex items-center gap-2 shrink-0">
               ${can('edit')?`<button data-act="edit-timeline" data-tid="${t.id}" class="text-[10px] text-gray-300 hover:text-[#0e7490]">Edit</button>`:''}
+              ${can('admin')?`<button data-act="delete-timeline-entry" data-cid="${c.id}" data-iid="${i.id}" data-tid="${t.id}" class="text-[10px] text-gray-300 hover:text-rose-500">Delete</button>`:''}
               <button data-act="copy-update" data-text="${esc(t.update)}" class="text-[10px] text-gray-300 hover:text-[#0e7490]">Copy</button>
             </div>
           </div>
@@ -1262,11 +1278,11 @@ function renderModal(){
       ${fg('ae-mode','Mode of Support',sel('ae-mode',AMS_MODES,m.modeOfSupport||AMS_MODES[0]))}
       ${fg('ae-status','Status',sel('ae-status',AMS_ENTRY_STATUSES,m.entryStatus||'Open'))}
       ${fg('ae-hours','Hours Consumed',inp('ae-hours','number',m.hours||'','e.g. 1.5','step="0.5" min="0"'))}
-      ${fg('ae-deps','Any Dependencies','optional',inp('ae-deps','text',m.dependencies||'','Dependencies or blockers'))}
+      ${fg('ae-deps','Any Dependencies',inp('ae-deps','text',m.dependencies||'','Dependencies or blockers'),'optional')}
     </div>
     <div class="mt-3 space-y-3">
       ${fg('ae-desc','Description',ta('ae-desc',m.description||'','What was the issue, query or activity?',2))}
-      ${fg('ae-solution','Solution Discussed','optional',ta('ae-solution',m.solution||'','Summary of resolution or discussion',2))}
+      ${fg('ae-solution','Solution Discussed',ta('ae-solution',m.solution||'','Summary of resolution or discussion',2),'optional')}
     </div>`;
   } else if(m.type==='confirm'){
     title='Confirm';btnLabel='Delete';btnCls='bg-rose-600 hover:bg-rose-700';
@@ -1934,6 +1950,27 @@ document.addEventListener('click',async e=>{
     if(S.expandedAmsHistory.has(eid))S.expandedAmsHistory.delete(eid);else S.expandedAmsHistory.add(eid);
     render();return;
   }
+  if(act==='delete-impl-module'){
+    if(!can('admin'))return;
+    const c=S.clients.find(x=>x.id===el.dataset.cid);const m=(c?.modules||[]).find(x=>x.id===el.dataset.mid);if(!m)return;
+    S.modal={type:'confirm',msg:`Delete module "${m.name}" and all its phase data? This cannot be undone.`,_act:'delete-impl-module',_cid:c.id,_mid:m.id};render();return;
+  }
+  if(act==='delete-timeline-entry'){
+    if(!can('admin'))return;
+    const c=S.clients.find(x=>x.id===el.dataset.cid);const i=c?.integrations.find(x=>x.id===el.dataset.iid);if(!i)return;
+    S.modal={type:'confirm',msg:`Delete this update? This cannot be undone.`,_act:'delete-timeline-entry',_cid:c.id,_iid:i.id,_tid:el.dataset.tid};render();return;
+  }
+  if(act==='delete-impl-update'){
+    if(!can('admin'))return;
+    const c=S.clients.find(x=>x.id===el.dataset.cid);const mod=(c?.modules||[]).find(x=>x.id===el.dataset.mid);if(!mod)return;
+    const ph=mod.phases?.find(x=>x.name===el.dataset.phase);if(!ph)return;
+    S.modal={type:'confirm',msg:`Delete this update? This cannot be undone.`,_act:'delete-impl-update',_cid:c.id,_mid:mod.id,_phase:el.dataset.phase,_tid:el.dataset.tid};render();return;
+  }
+  if(act==='delete-ams-entry'){
+    if(!can('admin'))return;
+    const c=S.clients.find(x=>x.id===el.dataset.cid);const e=c?.workLog?.find(x=>x.id===el.dataset.eid);if(!e)return;
+    S.modal={type:'confirm',msg:`Delete this entry (${fmtDate(entryDate(e))})? This cannot be undone.`,_act:'delete-ams-entry',_cid:c.id,_eid:e.id};render();return;
+  }
   if(act==='edit-ams-entry'){
     if(!can('edit'))return;
     const c=S.clients.find(x=>x.id===el.dataset.cid);const e=c?.workLog?.find(x=>x.id===el.dataset.eid);if(!e)return;
@@ -2012,6 +2049,35 @@ document.addEventListener('click',async e=>{
         if(other){delete c.manDayRate;delete c.workLog;}else{S.clients.splice(idx,1);}
         try{await saveClients(`Remove AMS data: ${snapshot.name}`);S.modal=null;showToast(`${snapshot.name} removed from AMS`);navigate('ams-clients');}
         catch(err){if(other){c.manDayRate=snapshot.manDayRate;c.workLog=snapshot.workLog;}else{S.clients.splice(idx,0,snapshot);}S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
+      else if(m._act==='delete-impl-module'){
+        const c=S.clients.find(x=>x.id===m._cid);if(!c){S.modal=null;render();return;}
+        const idx=(c.modules||[]).findIndex(x=>x.id===m._mid);if(idx<0){S.modal=null;render();return;}
+        const[rem]=c.modules.splice(idx,1);
+        try{await saveClients(`Delete module: ${rem.name}`);S.modal=null;showToast(`${rem.name} deleted`);navigate('impl-client-detail',{clientId:m._cid});}
+        catch(err){c.modules.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
+      else if(m._act==='delete-timeline-entry'){
+        const c=S.clients.find(x=>x.id===m._cid);const i=c?.integrations.find(x=>x.id===m._iid);if(!i){S.modal=null;render();return;}
+        const idx=i.timeline.findIndex(x=>x.id===m._tid);if(idx<0){S.modal=null;render();return;}
+        const[rem]=i.timeline.splice(idx,1);
+        try{await saveClients(`Delete update: ${i.name}`);S.modal=null;showToast('Update deleted');navigate('integ-detail',{clientId:m._cid,integId:m._iid});}
+        catch(err){i.timeline.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
+      else if(m._act==='delete-impl-update'){
+        const c=S.clients.find(x=>x.id===m._cid);const mod=(c?.modules||[]).find(x=>x.id===m._mid);if(!mod){S.modal=null;render();return;}
+        const ph=mod.phases?.find(x=>x.name===m._phase);if(!ph||!ph.updates){S.modal=null;render();return;}
+        const idx=ph.updates.findIndex(x=>x.id===m._tid);if(idx<0){S.modal=null;render();return;}
+        const[rem]=ph.updates.splice(idx,1);
+        try{await saveClients(`Delete update: ${m._phase}`);S.modal=null;showToast('Update deleted');navigate('impl-phase-detail',{clientId:m._cid,moduleId:m._mid,phase:m._phase});}
+        catch(err){ph.updates.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
+      else if(m._act==='delete-ams-entry'){
+        const c=S.clients.find(x=>x.id===m._cid);if(!c||!c.workLog){S.modal=null;render();return;}
+        const idx=c.workLog.findIndex(x=>x.id===m._eid);if(idx<0){S.modal=null;render();return;}
+        const[rem]=c.workLog.splice(idx,1);
+        try{await saveClients(`Delete entry: ${c.name}`);S.modal=null;showToast('Entry deleted');navigate('ams-client-detail',{clientId:m._cid});}
+        catch(err){c.workLog.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
       }
     } else if(m.type==='add-client'){
       const name=document.getElementById('m1')?.value.trim(),desc=document.getElementById('m2')?.value.trim();
