@@ -111,7 +111,10 @@ if(S.darkMode)document.documentElement.classList.add('dark');
 const STATUSES=['Not Started','In Progress','At Risk','On Hold','Completed'];
 const ROLES=['viewer','editor','admin'];
 const PHASES=['BPU','BPU Signoff','CRP','CRP Signoff','UAT','UAT Signoff','Data Migration / Production Migration','Go Live','Hypercare'];
-const AMS_CATEGORIES=['Bug Fix','Enhancement','Config Change','Support Ticket','Reporting'];
+const AMS_TYPES=['Bug Fix','Enhancement','Config Change','Support Ticket','Reporting','Training','Meeting','Consultation'];
+const AMS_QUERY_LEVELS=['L1 - Low','L2 - Medium','L3 - High','L4 - Critical'];
+const AMS_ENTRY_STATUSES=['Open','In Progress','Closed'];
+const AMS_MODES=['Online / Remote','Offline / In-person'];
 const HOURS_PER_DAY=8;
 const TEAL='0e7490',TEAL_DARK='0d3d4f',MAGENTA='b5179e',VIOLET='7c3aed';
 const SBG={'Completed':'bg-green-100 text-green-700 border border-green-200','In Progress':'bg-cyan-100 text-cyan-800 border border-cyan-200','At Risk':'bg-rose-100 text-rose-700 border border-rose-200','On Hold':'bg-violet-100 text-violet-700 border border-violet-200','Not Started':'bg-gray-100 text-gray-500 border border-gray-200'};
@@ -263,7 +266,7 @@ function renderCmdPalette(){
       if(c.name.toLowerCase().includes(q))results.push({type:'client',label:c.name,sub:'Integration Client',view:'client-detail',params:{clientId:c.id}});
       (c.integrations||[]).forEach(i=>{if(i.name.toLowerCase().includes(q))results.push({type:'integ',label:i.name,sub:`Integration · ${c.name}`,view:'integ-detail',params:{clientId:c.id,integId:i.id}});});
       if(c.modules!==undefined&&c.name.toLowerCase().includes(q))results.push({type:'implClient',label:c.name,sub:'Implementation Client',view:'impl-client-detail',params:{clientId:c.id}});
-      if(c.manDayRate!==undefined&&c.name.toLowerCase().includes(q))results.push({type:'amsClient',label:c.name,sub:'AMS Client',view:'ams-client-detail',params:{clientId:c.id}});
+      if(c.workLog!==undefined&&c.name.toLowerCase().includes(q))results.push({type:'amsClient',label:c.name,sub:'AMS Client',view:'ams-client-detail',params:{clientId:c.id}});
     });
     list=results.slice(0,20);
   }else{
@@ -452,7 +455,7 @@ function renderDashboard(){
   const implAtRiskClients=implClients.filter(c=>implProgress(c).atRisk>0);
   const implActiveClients=implClients.filter(c=>implProgress(c).pct<100);
 
-  const amsClients=S.clients.filter(c=>c.manDayRate!==undefined);
+  const amsClients=S.clients.filter(c=>c.workLog!==undefined);
   const now=new Date();
   const monthStart=new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);
   const monthEnd=todayStr();
@@ -776,28 +779,31 @@ function renderImplPhaseDetail(clientId,moduleId,phaseName){
 }
 
 // ─── AMS ──────────────────────────────────────────────────────────
-function amsEntryAmount(hours,rate){return(hours/HOURS_PER_DAY)*rate;}
+function amsEntryAmount(hours,rate){if(!rate)return null;return(hours/HOURS_PER_DAY)*rate;}
+function amsStatusBadge(s){const m={'Open':'bg-blue-50 text-blue-700 border-blue-200','In Progress':'bg-amber-50 text-amber-700 border-amber-200','Closed':'bg-green-50 text-green-700 border-green-200'};return`<span class="text-xs font-medium border ${m[s]||'bg-gray-50 text-gray-600 border-gray-200'} px-2 py-0.5 rounded-full">${esc(s||'Open')}</span>`;}
+function entryDate(e){return e.dateRaised||e.date||''}
+function entryType(e){return e.type||e.category||'—'}
+function entryRaisedBy(e){return e.raisedBy||e.loggedBy||'—'}
 function amsTotals(client,fromDate,toDate){
   const allLog=client.workLog||[];
-  const log=allLog.filter(e=>(!fromDate||e.date>=fromDate)&&(!toDate||e.date<=toDate));
+  const log=allLog.filter(e=>(!fromDate||entryDate(e)>=fromDate)&&(!toDate||entryDate(e)<=toDate));
   const totalHours=log.reduce((a,e)=>a+Number(e.hours||0),0);
   const allTimeHours=allLog.reduce((a,e)=>a+Number(e.hours||0),0);
   const bucket=client.totalAvailableHours;
   const hasBucket=bucket!==undefined&&bucket!==null&&bucket>0;
-  // Bucket depletes over the client's whole history, not per invoice — so a given
-  // billing period only gets billed for whatever's left after earlier hours ate into it.
+  const hasRate=!!(client.manDayRate>0);
   let billableHours=totalHours,coveredHours=0,balanceAvailable=null;
   if(hasBucket){
-    const hoursBeforePeriod=fromDate?allLog.filter(e=>e.date<fromDate).reduce((a,e)=>a+Number(e.hours||0),0):0;
+    const hoursBeforePeriod=fromDate?allLog.filter(e=>entryDate(e)<fromDate).reduce((a,e)=>a+Number(e.hours||0),0):0;
     const remainingAtPeriodStart=Math.max(0,bucket-hoursBeforePeriod);
     coveredHours=Math.min(totalHours,remainingAtPeriodStart);
     billableHours=Math.max(0,totalHours-remainingAtPeriodStart);
     balanceAvailable=Math.max(0,bucket-allTimeHours);
   }
-  const totalAmount=amsEntryAmount(billableHours,client.manDayRate||0);
-  const byCategory={};
-  log.forEach(e=>{byCategory[e.category]=(byCategory[e.category]||0)+Number(e.hours||0);});
-  return{log,totalHours,totalAmount,byCategory,hasBucket,totalAvailableHours:bucket,billableHours,coveredHours,consumedAllTime:allTimeHours,balanceAvailable};
+  const totalAmount=hasRate?(amsEntryAmount(billableHours,client.manDayRate)||0):null;
+  const byType={};
+  log.forEach(e=>{const tp=entryType(e);byType[tp]=(byType[tp]||0)+Number(e.hours||0);});
+  return{log,totalHours,totalAmount,byType,hasRate,hasBucket,totalAvailableHours:bucket,billableHours,coveredHours,consumedAllTime:allTimeHours,balanceAvailable};
 }
 function renderAmsClientList(){
   return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
@@ -806,13 +812,13 @@ function renderAmsClientList(){
     ${can('admin')?`<button data-act="modal-open" data-modal="add-ams-client" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Client</button>`:''}
   </div>
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-    ${(()=>{const amsClients=S.clients.filter(c=>c.manDayRate!==undefined);return amsClients.length?amsClients.map((c,idx)=>{
+    ${(()=>{const amsClients=S.clients.filter(c=>c.workLog!==undefined);return amsClients.length?amsClients.map((c,idx)=>{
       const t=amsTotals(c,'','');
       return`<div data-act="open-ams-client" data-id="${c.id}" style="animation-delay:${Math.min(idx*35,400)}ms" class="row-in card-hover bg-white rounded-2xl border border-gray-100 p-5 hover:border-[#0e7490]/30 transition cursor-pointer">
         <div class="font-semibold text-gray-900 mb-1" title="${esc(c.name)}">${esc(c.name)}</div>
         ${c.description?`<div class="text-xs text-gray-400 mb-3 truncate" title="${esc(c.description)}">${esc(c.description)}</div>`:''}
         <div class="text-xs text-gray-500">${t.totalHours.toFixed(1)} hours logged total</div>
-        ${can('admin')?`<div class="text-xs text-gray-400 mt-1">₹${(c.manDayRate||0).toLocaleString('en-IN')}/day rate</div>`:''}
+        ${can('admin')&&c.manDayRate?`<div class="text-xs text-gray-400 mt-1">₹${c.manDayRate.toLocaleString('en-IN')}/day rate</div>`:can('admin')?`<div class="text-xs text-gray-400 mt-1">Retainer (no rate)</div>`:''}
         ${t.hasBucket?`<div class="text-xs mt-1 ${t.balanceAvailable>0?'text-green-600':'text-rose-600'} font-medium">${t.balanceAvailable.toFixed(1)} / ${t.totalAvailableHours.toFixed(1)} hrs available</div>`:''}
       </div>`;
     }).join(''):`<div class="col-span-3 text-center py-16 text-gray-400">${emptyIcon('hours')}No AMS clients yet.</div>`;})()}
@@ -824,30 +830,22 @@ function renderAmsClientDetail(clientId){
   const c=S.clients.find(x=>x.id===clientId);
   if(!c)return`<div class="p-8 text-gray-400">Client not found</div>`;
   const t=amsTotals(c,S.amsFrom,S.amsTo);
-  const sorted=[...t.log].sort((a,b)=>b.date.localeCompare(a.date));
-  return`<div class="max-w-6xl mx-auto px-6 py-7 fade">
+  const sorted=[...t.log].sort((a,b)=>entryDate(b).localeCompare(entryDate(a)));
+  const COLS=['#','Date Raised','Raised / Attended By','Module / Meeting','Project','Description','Type','Query Level','Dependencies','Status','Solution Discussed','Mode of Support','Hours'];
+  return`<div class="max-w-full mx-auto px-6 py-7 fade">
   <div class="flex items-center gap-2 text-sm text-gray-400 mb-4">
     <button data-act="nav-ams" class="hover:text-[#0e7490]">AMS</button><span>›</span>
     <span class="text-gray-900 font-medium">${esc(c.name)}</span>
   </div>
   <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
     <div><h1 class="text-xl font-bold text-gray-900">${esc(c.name)}</h1>${c.description?`<p class="text-sm text-gray-400 mt-0.5">${esc(c.description)}</p>`:''}</div>
-    ${can('admin')?`<div class="flex gap-2">
-      <button data-act="edit-ams-client" data-id="${c.id}" class="text-gray-400 hover:text-[#0e7490] text-xs px-2 border border-gray-200 rounded-lg py-1.5">Edit</button>
+    ${can('admin')?`<div class="flex gap-2 flex-wrap">
+      <button data-act="edit-ams-client" data-id="${c.id}" class="text-gray-400 hover:text-[#0e7490] text-xs px-2 border border-gray-200 rounded-lg py-1.5">Edit Client</button>
       <button data-act="delete-ams-client" data-id="${c.id}" class="text-rose-400 hover:text-rose-600 text-xs px-2">Delete Client</button>
     </div>`:''}
   </div>
-  ${can('edit')?`<div class="bg-white rounded-2xl border border-gray-100 p-5 mb-6">
-    <h3 class="font-semibold text-gray-900 text-sm mb-3">Log Hours</h3>
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-      <input id="ams-date" type="date" value="${todayStr()}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
-      <select id="ams-category" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${AMS_CATEGORIES.map(cat=>`<option>${cat}</option>`).join('')}</select>
-      <input id="ams-hours" type="number" step="0.5" min="0" placeholder="Hours" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
-      <input id="ams-desc" type="text" placeholder="Description" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
-    </div>
-    <button data-act="log-ams-hours" data-cid="${c.id}" class="w-full btn-grad text-white font-semibold rounded-xl py-2.5 text-sm transition">+ Add Entry</button>
-  </div>`:''}
-  ${can('admin')?`<div class="bg-white rounded-2xl border border-gray-100 p-5 mb-6">
+  ${can('edit')?`<div class="mb-5"><button data-act="modal-open" data-modal="add-ams-entry" data-cid="${c.id}" class="btn-grad text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition">+ Add Entry</button></div>`:''}
+  ${can('admin')&&t.hasRate?`<div class="bg-white rounded-2xl border border-gray-100 p-5 mb-6">
     <h3 class="font-semibold text-gray-900 text-sm mb-3">Billing</h3>
     ${t.hasBucket?`<div class="grid grid-cols-3 gap-4 mb-4">
       <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">${t.totalAvailableHours.toFixed(1)}</div><div class="text-xs text-gray-500">Total Available</div></div>
@@ -857,55 +855,56 @@ function renderAmsClientDetail(clientId){
     <div class="flex flex-wrap items-end gap-3 mb-4">
       <div><label class="block text-xs text-gray-400 mb-1">From</label><input id="ams-from" data-act="ams-range" type="date" value="${esc(S.amsFrom)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs text-gray-400 mb-1">To</label><input id="ams-to" data-act="ams-range" type="date" value="${esc(S.amsTo)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
-      <button data-act="exp-ams-invoice" data-cid="${c.id}" class="btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">📄 Export Invoice PDF</button>
+      <button data-act="exp-ams-invoice" data-cid="${c.id}" class="btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">📄 Invoice PDF</button>
+      <button data-act="exp-ams-activity" data-cid="${c.id}" class="bg-white border border-[#0e7490] text-[#0e7490] text-sm font-medium px-4 py-2 rounded-xl hover:bg-[#0e7490]/5 transition">📋 Activity Report</button>
     </div>
     <div class="grid grid-cols-3 gap-4 mb-4">
       <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">${t.totalHours.toFixed(1)}</div><div class="text-xs text-gray-500">Hours This Period${t.hasBucket?` (${t.coveredHours.toFixed(1)} covered)`:''}</div></div>
       <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">₹${(c.manDayRate||0).toLocaleString('en-IN')}</div><div class="text-xs text-gray-500">Day Rate</div></div>
-      <div class="bg-[#0e7490]/10 rounded-xl p-4"><div class="text-2xl font-bold text-[#0e7490]">₹${t.totalAmount.toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="text-xs text-gray-500">Billable Amount</div></div>
+      <div class="bg-[#0e7490]/10 rounded-xl p-4"><div class="text-2xl font-bold text-[#0e7490]">₹${(t.totalAmount||0).toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="text-xs text-gray-500">Billable Amount</div></div>
     </div>
     <div class="flex flex-wrap gap-2">
-      ${Object.entries(t.byCategory).map(([cat,hrs])=>`<span class="text-xs bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-gray-600">${esc(cat)}: ${hrs.toFixed(1)}h</span>`).join('')||'<span class="text-xs text-gray-400">No entries in this range</span>'}
+      ${Object.entries(t.byType).map(([tp,hrs])=>`<span class="text-xs bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-gray-600">${esc(tp)}: ${hrs.toFixed(1)}h</span>`).join('')||'<span class="text-xs text-gray-400">No entries in this range</span>'}
     </div>
+  </div>`:can('admin')&&!t.hasRate?`<div class="bg-white rounded-2xl border border-gray-100 p-5 mb-6">
+    <div class="flex flex-wrap items-end gap-3 mb-4">
+      <div><label class="block text-xs text-gray-400 mb-1">From</label><input id="ams-from" data-act="ams-range" type="date" value="${esc(S.amsFrom)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs text-gray-400 mb-1">To</label><input id="ams-to" data-act="ams-range" type="date" value="${esc(S.amsTo)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <button data-act="exp-ams-activity" data-cid="${c.id}" class="btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">📋 Activity Report</button>
+    </div>
+    <div class="bg-gray-50 rounded-xl p-4 inline-block"><div class="text-2xl font-bold text-gray-700">${t.totalHours.toFixed(1)}</div><div class="text-xs text-gray-500">Total Hours (Retainer)</div></div>
   </div>`:''}
-  <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-    <table class="w-full text-sm">
+  <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden overflow-x-auto">
+    <table class="w-full text-sm min-w-[1400px]">
       <thead class="border-b border-gray-100 bg-gray-50 sticky-head"><tr>
-        ${['Date','Category','Description','Hours','Logged By',...(can('admin')?['Amount']:[]),...(can('edit')?['Actions']:[])].map(h=>`<th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}
+        ${COLS.map((h,i)=>`<th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide ${i===0?'w-8 text-center':''}">${h}</th>`).join('')}
+        ${can('edit')?`<th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>`:''}
       </tr></thead>
       <tbody class="divide-y divide-gray-50">
-        ${sorted.length?sorted.map(e=>{
-          const isEditing=S.editingAmsEntryId===e.id;
-          const hasHistory=e.edits&&e.edits.length>0;
+        ${sorted.length?sorted.map((e,idx)=>{
           const isExpanded=S.expandedAmsHistory.has(e.id);
-          if(isEditing){
-            return`<tr class="bg-gray-50/50">
-              <td class="px-4 py-3"><input id="edit-ams-date-${e.id}" type="date" value="${esc(e.date)}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-xs w-full focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></td>
-              <td class="px-4 py-3"><select id="edit-ams-cat-${e.id}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-xs w-full focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${AMS_CATEGORIES.map(cat=>`<option${cat===e.category?' selected':''}>${cat}</option>`).join('')}</select></td>
-              <td class="px-4 py-3"><input id="edit-ams-desc-${e.id}" type="text" value="${esc(e.description||'')}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-xs w-full focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></td>
-              <td class="px-4 py-3"><input id="edit-ams-hours-${e.id}" type="number" step="0.5" min="0" value="${e.hours}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-xs w-20 focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></td>
-              <td class="px-4 py-3 text-gray-400 text-xs">${esc(e.loggedBy||'—')}</td>
-              ${can('admin')?`<td class="px-4 py-3"></td>`:''}
-              <td class="px-4 py-3"><div class="flex gap-1.5">
-                <button data-act="cancel-edit-ams-entry" class="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 border border-gray-200 rounded-lg transition">Cancel</button>
-                <button data-act="save-edit-ams-entry" data-cid="${c.id}" data-eid="${e.id}" class="text-xs text-white bg-[#0e7490] hover:bg-[#0d3d4f] px-2 py-1 rounded-lg transition">Save</button>
-              </div></td>
-            </tr>`;
-          }
-          return`<tr class="hover:bg-gray-50/50">
-            <td class="px-4 py-3 text-gray-600 whitespace-nowrap align-top">${fmtDate(e.date)}</td>
-            <td class="px-4 py-3 align-top"><span class="text-xs bg-gray-50 border border-gray-200 rounded-full px-2 py-0.5 text-gray-600">${esc(e.category)}</span></td>
-            <td class="px-4 py-3 text-gray-700 align-top">
+          const hasHistory=e.edits&&e.edits.length>0;
+          return`<tr class="hover:bg-gray-50/50 transition">
+            <td class="px-3 py-2 text-center text-xs text-gray-400 font-medium">${sorted.length-idx}</td>
+            <td class="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">${fmtDate(entryDate(e))}</td>
+            <td class="px-3 py-2 text-gray-700 text-xs">${esc(entryRaisedBy(e))}</td>
+            <td class="px-3 py-2 text-gray-700 text-xs">${esc(e.module||'—')}</td>
+            <td class="px-3 py-2 text-gray-700 text-xs">${esc(e.project||'—')}</td>
+            <td class="px-3 py-2 text-gray-700 text-xs max-w-[180px]">
               ${esc(e.description||'—')}
-              ${hasHistory?`<div><button data-act="toggle-ams-history" data-eid="${e.id}" class="text-[10px] text-amber-600 hover:text-amber-700 font-medium mt-1">✎ edited${e.edits.length>1?` (${e.edits.length}×)`:''} — ${isExpanded?'hide':'view'} history</button></div>`:''}
-              ${isExpanded&&hasHistory?`<div class="mt-1.5 pl-2 border-l-2 border-amber-200 space-y-1.5">${[...e.edits].reverse().map(h=>`<div class="text-[11px] text-gray-400">${fmtDate(h.editedAt)} · ${esc(h.editedBy||'')} changed it from: ${esc(h.description||'—')} (${h.category}, ${h.hours}h, ${fmtDate(h.date)})</div>`).join('')}</div>`:''}
+              ${hasHistory?`<div><button data-act="toggle-ams-history" data-eid="${e.id}" class="text-[10px] text-amber-600 hover:text-amber-700 font-medium mt-0.5">✎ edited — ${isExpanded?'hide':'view'}</button></div>`:''}
+              ${isExpanded&&hasHistory?`<div class="mt-1 pl-2 border-l-2 border-amber-200 space-y-1">${[...e.edits].reverse().map(h=>`<div class="text-[10px] text-gray-400">${fmtDate(h.editedAt)}: ${esc(h.description||'—')}</div>`).join('')}</div>`:''}
             </td>
-            <td class="px-4 py-3 text-gray-600 align-top">${Number(e.hours).toFixed(1)}</td>
-            <td class="px-4 py-3 text-gray-400 text-xs align-top">${esc(e.loggedBy||'—')}</td>
-            ${can('admin')?`<td class="px-4 py-3 text-gray-700 font-medium align-top">${t.hasBucket?'<span class="text-xs text-gray-400">pooled</span>':`₹${amsEntryAmount(Number(e.hours),c.manDayRate||0).toLocaleString('en-IN',{maximumFractionDigits:0})}`}</td>`:''}
-            ${can('edit')?`<td class="px-4 py-3 align-top"><button data-act="edit-ams-entry" data-eid="${e.id}" class="text-xs text-gray-300 hover:text-[#0e7490]">Edit</button></td>`:''}
+            <td class="px-3 py-2 text-xs"><span class="bg-gray-50 border border-gray-200 rounded-full px-2 py-0.5 text-gray-600">${esc(entryType(e))}</span></td>
+            <td class="px-3 py-2 text-xs text-gray-600">${esc(e.queryLevel||'—')}</td>
+            <td class="px-3 py-2 text-xs text-gray-600 max-w-[120px]">${esc(e.dependencies||'—')}</td>
+            <td class="px-3 py-2">${amsStatusBadge(e.entryStatus||'Open')}</td>
+            <td class="px-3 py-2 text-xs text-gray-600 max-w-[160px]">${esc(e.solution||'—')}</td>
+            <td class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">${esc(e.modeOfSupport||'—')}</td>
+            <td class="px-3 py-2 text-gray-700 font-medium text-xs text-right">${Number(e.hours||0).toFixed(1)}</td>
+            ${can('edit')?`<td class="px-3 py-2"><button data-act="edit-ams-entry" data-cid="${c.id}" data-eid="${e.id}" class="text-xs text-gray-300 hover:text-[#0e7490]">Edit</button></td>`:''}
           </tr>`;
-        }).join(''):`<tr><td colspan="${5+(can('admin')?1:0)+(can('edit')?1:0)}" class="text-center py-12 text-gray-400 text-sm">No hours logged yet</td></tr>`}
+        }).join(''):`<tr><td colspan="${COLS.length+(can('edit')?1:0)}" class="text-center py-12 text-gray-400 text-sm">${emptyIcon('hours')}No entries yet. Add one to get started.</td></tr>`}
       </tbody>
     </table>
   </div>
@@ -1106,7 +1105,7 @@ function renderAdminImpl(){
 }
 
 function renderAdminAms(){
-  const amsClients=S.clients.filter(c=>c.manDayRate!==undefined);
+  const amsClients=S.clients.filter(c=>c.workLog!==undefined);
   return`<div>
   <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-ams-client" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Client</button></div>
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -1119,7 +1118,7 @@ function renderAdminAms(){
           const t=amsTotals(c,'','');
           return`<tr class="hover:bg-gray-50/50 transition">
           <td class="px-4 py-3"><div class="font-medium text-gray-900" title="${esc(c.name)}">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 truncate max-w-[180px]" title="${esc(c.description)}">${esc(c.description)}</div>`:''}</td>
-          <td class="px-4 py-3 font-semibold text-gray-700">₹${(c.manDayRate||0).toLocaleString('en-IN')}</td>
+          <td class="px-4 py-3 font-semibold text-gray-700">${c.manDayRate?`₹${c.manDayRate.toLocaleString('en-IN')}`:'Retainer (no rate)'}</td>
           <td class="px-4 py-3 text-gray-600">${t.totalHours.toFixed(1)}</td>
           <td class="px-4 py-3"><button data-act="delete-ams-client" data-id="${c.id}" class="text-xs text-rose-400 hover:text-rose-600 font-medium">Remove from AMS</button></td>
         </tr>`;}).join(''):`<tr><td colspan="4" class="text-center py-8 text-gray-400 text-sm">No AMS clients yet</td></tr>`}
@@ -1230,23 +1229,45 @@ function renderModal(){
   } else if(m.type==='add-ams-client'){
     title='Add Client to AMS';
     body=`<div class="space-y-3">
-      ${clientPickerHtml(c=>c.manDayRate!==undefined)}
+      ${clientPickerHtml(c=>c.workLog!==undefined)}
       <p class="text-xs text-gray-400 text-center">— or create a new client —</p>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">New Client Name</label><input id="m1" type="text" placeholder="e.g. HDFC Bank" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m2" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none"></textarea></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Man-Day Rate (₹) *</label><input id="m3" type="number" min="0" placeholder="e.g. 15000" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
-      <p class="text-xs text-gray-400 mt-1">Required either way — applies to the selected client above too.</p></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours (optional)</label><input id="m4" type="number" min="0" step="0.5" placeholder="Leave blank for pure pay-per-hour" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
-      <p class="text-xs text-gray-400 mt-1">If set, logged hours are deducted from this pool first — only hours beyond it get billed.</p></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Man-Day Rate (₹) <span class="text-gray-400 font-normal">optional — leave blank for retainer/hours-only</span></label><input id="m3" type="number" min="0" placeholder="e.g. 15000" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours <span class="text-gray-400 font-normal">optional</span></label><input id="m4" type="number" min="0" step="0.5" placeholder="Leave blank if not applicable" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+      <p class="text-xs text-gray-400 mt-1">If set, hours are deducted from this pool first — only overages get billed.</p></div>
     </div>`;
   } else if(m.type==='edit-ams-client'){
     title='Edit AMS Client';
     body=`<div class="space-y-3">
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m1" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(m.description||'')}</textarea></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Man-Day Rate (₹) *</label><input id="m2" type="number" min="0" value="${m.manDayRate||''}" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours (optional)</label><input id="m3" type="number" min="0" step="0.5" value="${m.totalAvailableHours??''}" placeholder="Leave blank for pure pay-per-hour" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Man-Day Rate (₹) <span class="text-gray-400 font-normal">optional</span></label><input id="m2" type="number" min="0" value="${m.manDayRate||''}" placeholder="Leave blank for retainer/hours-only" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours <span class="text-gray-400 font-normal">optional</span></label><input id="m3" type="number" min="0" step="0.5" value="${m.totalAvailableHours??''}" placeholder="Leave blank if not applicable" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
     </div>`;
     btnLabel='Save';
+  } else if(m.type==='add-ams-entry'||m.type==='edit-ams-entry'){
+    const isEdit=m.type==='edit-ams-entry';
+    title=isEdit?'Edit Entry':'Add AMS Entry';btnLabel=isEdit?'Save Changes':'Add Entry';
+    const fg=(id,label,el,hint='')=>`<div><label class="block text-xs font-medium text-gray-500 mb-1">${label}${hint?`<span class="text-gray-400 font-normal ml-1">${hint}</span>`:''}</label>${el}</div>`;
+    const inp=(id,type,val='',ph='',extra='')=>`<input id="${id}" type="${type}" value="${esc(val)}" placeholder="${ph}" ${extra} class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`;
+    const sel=(id,opts,cur='')=>`<select id="${id}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${opts.map(o=>`<option${o===cur?' selected':''}>${o}</option>`).join('')}</select>`;
+    const ta=(id,val='',ph='',rows=2)=>`<textarea id="${id}" rows="${rows}" placeholder="${ph}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(val)}</textarea>`;
+    body=`<div class="grid grid-cols-2 gap-3">
+      ${fg('ae-date','Date Raised',inp('ae-date','date',m.dateRaised||todayStr()))}
+      ${fg('ae-raised','Raised / Attended By',inp('ae-raised','text',m.raisedBy||S.user?.name||'','Name'))}
+      ${fg('ae-module','Module / Meeting',inp('ae-module','text',m.module||'','e.g. Payroll, UAT Meeting'))}
+      ${fg('ae-project','Project',inp('ae-project','text',m.project||'','Project name'))}
+      ${fg('ae-type','Type',sel('ae-type',AMS_TYPES,m.type||AMS_TYPES[0]))}
+      ${fg('ae-level','Query Level',sel('ae-level',AMS_QUERY_LEVELS,m.queryLevel||AMS_QUERY_LEVELS[0]))}
+      ${fg('ae-mode','Mode of Support',sel('ae-mode',AMS_MODES,m.modeOfSupport||AMS_MODES[0]))}
+      ${fg('ae-status','Status',sel('ae-status',AMS_ENTRY_STATUSES,m.entryStatus||'Open'))}
+      ${fg('ae-hours','Hours Consumed',inp('ae-hours','number',m.hours||'','e.g. 1.5','step="0.5" min="0"'))}
+      ${fg('ae-deps','Any Dependencies','optional',inp('ae-deps','text',m.dependencies||'','Dependencies or blockers'))}
+    </div>
+    <div class="mt-3 space-y-3">
+      ${fg('ae-desc','Description',ta('ae-desc',m.description||'','What was the issue, query or activity?',2))}
+      ${fg('ae-solution','Solution Discussed','optional',ta('ae-solution',m.solution||'','Summary of resolution or discussion',2))}
+    </div>`;
   } else if(m.type==='confirm'){
     title='Confirm';btnLabel='Delete';btnCls='bg-rose-600 hover:bg-rose-700';
     body=`<p class="text-sm text-gray-600">${esc(m.msg||'Are you sure? This cannot be undone.')}</p>`;
@@ -1254,7 +1275,7 @@ function renderModal(){
   const busy=!!m.busy;
   const busyLabel=m.type==='confirm'?'Deleting…':'Saving…';
   return`<div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 fade" id="modal-overlay">
-  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 modal-pop">
+  <div class="${m.type==='add-ams-entry'||m.type==='edit-ams-entry'?'max-w-2xl':'max-w-md'} bg-white rounded-2xl shadow-2xl w-full p-6 modal-pop overflow-y-auto max-h-[90vh]">
     <div class="flex items-center justify-between mb-5">
       <h2 class="font-bold text-gray-900">${esc(title)}</h2>
       <button data-act="modal-close" ${busy?'disabled class="text-gray-200 text-xl leading-none cursor-not-allowed"':'class="text-gray-400 hover:text-gray-600 text-xl leading-none"'}>✕</button>
@@ -1597,9 +1618,91 @@ function exportImplPdf(clientId){
 }
 
 // ─── EXPORT: AMS Billing Breakdown (PDF, admin only) ────────────────
+function exportAmsActivityPdf(clientId){
+  if(!can('admin'))return;
+  const c=S.clients.find(x=>x.id===clientId);if(!c)return;
+  showToast('Generating activity report…','info');
+  try{
+    const{jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape',format:'a4',unit:'mm'});
+    const W=297,H=210,NV=[13,61,79],MG=[181,23,158];
+    const t=amsTotals(c,S.amsFrom,S.amsTo);
+    const sorted=[...t.log].sort((a,b)=>entryDate(a).localeCompare(entryDate(b)));
+    const periodLabel=(S.amsFrom||S.amsTo)?`${S.amsFrom?fmtDate(S.amsFrom):'Start'} - ${S.amsTo?fmtDate(S.amsTo):'Today'}`:'All Time';
+
+    // ── COVER ──────────────────────────────────────────────────────
+    doc.setFillColor(...NV);doc.rect(0,0,W,H,'F');
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(125,211,232);doc.text('AMS ACTIVITY REPORT',W/2,58,{align:'center'});
+    doc.setFont('helvetica','bold');doc.setFontSize(34);doc.setTextColor(255,255,255);doc.text(c.name,W/2,80,{align:'center'});
+    doc.setFont('helvetica','normal');doc.setFontSize(14);doc.setTextColor(125,211,232);doc.text(`Period: ${periodLabel}`,W/2,95,{align:'center'});
+    doc.setFillColor(...MG);doc.rect(W/2-12,100,24,1,'F');
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(100,116,139);
+    doc.text('Prepared by Kognoz',W/2,H-12,{align:'center'});
+    doc.text(new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}),W/2,H-7,{align:'center'});
+
+    // ── SUMMARY PAGE ───────────────────────────────────────────────
+    doc.addPage();
+    const drawHdr=()=>{doc.setFillColor(...NV);doc.rect(0,0,W,14,'F');doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text('AMS Activity Log',10,9.5);doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(c.name,W-10,9.5,{align:'right'});};
+    drawHdr();
+    // Stat boxes
+    const openCount=sorted.filter(e=>(e.entryStatus||'Open')==='Open').length;
+    const inprogCount=sorted.filter(e=>e.entryStatus==='In Progress').length;
+    const closedCount=sorted.filter(e=>e.entryStatus==='Closed').length;
+    [{l:'Total Entries',v:sorted.length,rgb:NV},{l:'Total Hours',v:t.totalHours.toFixed(1),rgb:[100,116,139]},{l:'Open',v:openCount,rgb:[29,78,216]},{l:'In Progress',v:inprogCount,rgb:[146,64,14]},{l:'Closed',v:closedCount,rgb:[21,128,61]}]
+    .forEach(({l,v,rgb},i)=>{const x=10+i*57;doc.setFillColor(...rgb);doc.roundedRect(x,18,50,20,2,2,'F');doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(255,255,255);doc.text(String(v),x+25,30,{align:'center'});doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.text(l,x+25,37,{align:'center'});});
+
+    // Activity table
+    const HEADS=['#','Date Raised','Raised By','Module','Project','Description','Type','Level','Dependencies','Status','Solution','Mode','Hrs'];
+    const body=sorted.map((e,i)=>[
+      String(i+1),
+      fmtDate(entryDate(e)),
+      entryRaisedBy(e),
+      e.module||'-',
+      e.project||'-',
+      e.description||'-',
+      entryType(e),
+      e.queryLevel||'-',
+      e.dependencies||'-',
+      e.entryStatus||'Open',
+      e.solution||'-',
+      e.modeOfSupport||'-',
+      Number(e.hours||0).toFixed(1),
+    ]);
+    const statusColors={'Open':[29,78,216],'In Progress':[146,64,14],'Closed':[21,128,61]};
+    doc.autoTable({
+      startY:42,
+      margin:{top:18,left:8,right:8,bottom:10},
+      head:[HEADS],
+      body,
+      headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:7.5},
+      styles:{fontSize:7,cellPadding:2,valign:'top',overflow:'linebreak'},
+      columnStyles:{
+        0:{cellWidth:8,halign:'center'},1:{cellWidth:22},2:{cellWidth:24},3:{cellWidth:24},4:{cellWidth:22},
+        5:{cellWidth:'auto'},6:{cellWidth:20},7:{cellWidth:18},8:{cellWidth:22},9:{cellWidth:20},
+        10:{cellWidth:'auto'},11:{cellWidth:20},12:{cellWidth:12,halign:'right'},
+      },
+      alternateRowStyles:{fillColor:[245,249,250]},
+      didParseCell:d=>{
+        if(d.section!=='body'||d.column.index!==9)return;
+        const rgb=statusColors[String(d.cell.raw)];
+        if(rgb){d.cell.styles.textColor=rgb;d.cell.styles.fontStyle='bold';}
+      },
+      didDrawPage:drawHdr,
+    });
+
+    // ── THANK YOU ──────────────────────────────────────────────────
+    doc.addPage();doc.setFillColor(...NV);doc.rect(0,0,W,H,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(36);doc.setTextColor(255,255,255);doc.text('Thank You',W/2,H/2-8,{align:'center'});
+    doc.setFillColor(...MG);doc.rect(W/2-10,H/2,20,1,'F');
+    doc.setFont('helvetica','normal');doc.setFontSize(13);doc.setTextColor(125,211,232);doc.text('Kognoz · HR Transformation & Consulting',W/2,H/2+10,{align:'center'});
+
+    doc.save(`${c.name}_AMS_Activity_Report.pdf`);showToast('Activity report downloaded ✓');
+  }catch(e){console.error(e);showToast('PDF failed: '+e.message,'error');}
+}
+
 function exportAmsInvoicePdf(clientId){
   if(!can('admin'))return;
   const c=S.clients.find(x=>x.id===clientId);if(!c)return;
+  if(!c.manDayRate){showToast('Invoice not available — no day rate set for this client. Use Activity Report instead.','warn');return;}
   showToast('Generating invoice…','info');
   try{
     const{jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape',format:'a4',unit:'mm'});
@@ -1637,7 +1740,7 @@ function exportAmsInvoicePdf(clientId){
       columnStyles:{0:{cellWidth:28},1:{cellWidth:35},2:{cellWidth:'auto'},3:{cellWidth:22,halign:'right'},4:{cellWidth:30,halign:'right'}},
       didDrawPage:drawHeaderBar,
     });
-    const catRows=Object.entries(t.byCategory).map(([cat,hrs])=>[cat,hrs.toFixed(1),t.hasBucket?'Pooled':amsEntryAmount(hrs,c.manDayRate||0).toLocaleString('en-IN',{maximumFractionDigits:0})]);
+    const catRows=Object.entries(t.byType).map(([cat,hrs])=>[cat,hrs.toFixed(1),t.hasBucket?'Pooled':(amsEntryAmount(hrs,c.manDayRate||0)||0).toLocaleString('en-IN',{maximumFractionDigits:0})]);
     if(catRows.length){
       doc.autoTable({
         startY:doc.lastAutoTable.finalY+8,
@@ -1826,63 +1929,30 @@ document.addEventListener('click',async e=>{
     catch(err){ph.updates[idx]=snapshot;showToast('Failed: '+err.message,'error');clearBtnBusy(el);}
     return;
   }
-  if(act==='log-ams-hours'){
-    if(!can('edit'))return;
-    const cid=el.dataset.cid;
-    const c=S.clients.find(x=>x.id===cid);if(!c)return;
-    const date=document.getElementById('ams-date')?.value;
-    const category=document.getElementById('ams-category')?.value;
-    const hours=parseFloat(document.getElementById('ams-hours')?.value);
-    const description=document.getElementById('ams-desc')?.value?.trim()||'';
-    if(!date||!hours||hours<=0){showToast('Date and hours required','error');return;}
-    const entry={id:uid(),date,category,description,hours,loggedBy:S.user.name,loggedAt:new Date().toISOString()};
-    if(!c.workLog)c.workLog=[];
-    c.workLog.push(entry);setBtnBusy(el,'Saving…');
-    try{await saveClients(`Log hours: ${c.name}`);showToast('Entry added ✓');navigate('ams-client-detail',{clientId:cid});}
-    catch(err){c.workLog.pop();showToast('Failed: '+err.message,'error');clearBtnBusy(el);}
-    return;
-  }
-  if(act==='edit-ams-entry'){
-    if(!can('edit'))return;
-    S.editingAmsEntryId=el.dataset.eid;render();
-    setTimeout(()=>{const inp=document.getElementById(`edit-ams-desc-${el.dataset.eid}`);if(inp)inp.focus();},50);
-    return;
-  }
-  if(act==='cancel-edit-ams-entry'){S.editingAmsEntryId=null;render();return;}
   if(act==='toggle-ams-history'){
     const eid=el.dataset.eid;
     if(S.expandedAmsHistory.has(eid))S.expandedAmsHistory.delete(eid);else S.expandedAmsHistory.add(eid);
     render();return;
   }
-  if(act==='save-edit-ams-entry'){
+  if(act==='edit-ams-entry'){
     if(!can('edit'))return;
-    const cid=el.dataset.cid,eid=el.dataset.eid;
-    const c=S.clients.find(x=>x.id===cid);if(!c||!c.workLog)return;
-    const idx=c.workLog.findIndex(x=>x.id===eid);if(idx<0)return;
-    const original=c.workLog[idx];
-    const newDate=document.getElementById(`edit-ams-date-${eid}`)?.value;
-    const newCategory=document.getElementById(`edit-ams-cat-${eid}`)?.value;
-    const newDesc=document.getElementById(`edit-ams-desc-${eid}`)?.value?.trim()||'';
-    const newHours=parseFloat(document.getElementById(`edit-ams-hours-${eid}`)?.value);
-    if(!newDate||!newHours||newHours<=0){showToast('Date and hours required','error');return;}
-    const unchanged=newDate===original.date&&newCategory===original.category&&newDesc===(original.description||'')&&newHours===Number(original.hours);
-    if(unchanged){S.editingAmsEntryId=null;render();return;}
-    const snapshot=JSON.parse(JSON.stringify(original));
-    const updated={...original,edits:[...(original.edits||[]),{date:original.date,category:original.category,description:original.description,hours:original.hours,editedAt:new Date().toISOString(),editedBy:S.user.name}],date:newDate,category:newCategory,description:newDesc,hours:newHours,lastEditedAt:new Date().toISOString(),lastEditedBy:S.user.name};
-    c.workLog[idx]=updated;
-    setBtnBusy(el,'Saving…');
-    try{await saveClients(`Edit hours entry: ${c.name}`);S.editingAmsEntryId=null;showToast('Entry updated ✓');navigate('ams-client-detail',{clientId:cid});}
-    catch(err){c.workLog[idx]=snapshot;showToast('Failed: '+err.message,'error');clearBtnBusy(el);}
-    return;
+    const c=S.clients.find(x=>x.id===el.dataset.cid);const e=c?.workLog?.find(x=>x.id===el.dataset.eid);if(!e)return;
+    S.modal={type:'edit-ams-entry',cid:el.dataset.cid,eid:el.dataset.eid,
+      dateRaised:entryDate(e),raisedBy:entryRaisedBy(e),module:e.module||'',project:e.project||'',
+      description:e.description||'',type:entryType(e),queryLevel:e.queryLevel||AMS_QUERY_LEVELS[0],
+      dependencies:e.dependencies||'',entryStatus:e.entryStatus||'Open',solution:e.solution||'',
+      modeOfSupport:e.modeOfSupport||AMS_MODES[0],hours:e.hours||''};
+    render();setTimeout(()=>document.getElementById('ae-date')?.focus(),50);return;
   }
+  if(act==='exp-ams-activity'){if(!can('admin'))return;setBtnBusy(el,'Generating…');try{exportAmsActivityPdf(el.dataset.cid);}finally{clearBtnBusy(el);}return;}
   if(act==='delete-client'){
     if(!can('admin'))return;const c=S.clients.find(x=>x.id===el.dataset.id);if(!c)return;
-    const other=c.modules!==undefined||c.manDayRate!==undefined;
+    const other=c.modules!==undefined||c.workLog!==undefined;
     S.modal={type:'confirm',msg:other?`Remove "${c.name}" from Integrations (their ${c.integrations.length} integrations)? They'll stay in other sections. Cannot be undone.`:`Delete "${c.name}" entirely, including all ${c.integrations.length} integrations? Cannot be undone.`,_act:'delete-client',_id:c.id};render();return;
   }
   if(act==='delete-impl-client'){
     if(!can('admin'))return;const c=S.clients.find(x=>x.id===el.dataset.id);if(!c)return;
-    const other=c.integrations.length>0||c.manDayRate!==undefined;
+    const other=c.integrations.length>0||c.workLog!==undefined;
     S.modal={type:'confirm',msg:other?`Remove "${c.name}" from Implementations (their ${(c.modules||[]).length} modules)? They'll stay in other sections. Cannot be undone.`:`Delete "${c.name}" entirely, including all ${(c.modules||[]).length} modules? Cannot be undone.`,_act:'delete-impl-client',_id:c.id};render();return;
   }
   if(act==='delete-integ'){
@@ -1908,7 +1978,7 @@ document.addEventListener('click',async e=>{
       S.modal={...m,busy:true};render();
       if(m._act==='delete-client'){
         const idx=S.clients.findIndex(x=>x.id===m._id);if(idx<0){S.modal=null;render();return;}
-        const c=S.clients[idx];const other=c.modules!==undefined||c.manDayRate!==undefined;
+        const c=S.clients[idx];const other=c.modules!==undefined||c.workLog!==undefined;
         const snapshot=JSON.parse(JSON.stringify(c));
         if(other){c.integrations=[];}else{S.clients.splice(idx,1);}
         try{await saveClients(`Remove Integration data: ${snapshot.name}`);S.modal=null;showToast(`${snapshot.name} removed from Integrations`);render();}
@@ -1929,7 +1999,7 @@ document.addEventListener('click',async e=>{
       }
       else if(m._act==='delete-impl-client'){
         const idx=S.clients.findIndex(x=>x.id===m._id);if(idx<0){S.modal=null;render();return;}
-        const c=S.clients[idx];const other=c.integrations.length>0||c.manDayRate!==undefined;
+        const c=S.clients[idx];const other=c.integrations.length>0||c.workLog!==undefined;
         const snapshot=JSON.parse(JSON.stringify(c));
         if(other){delete c.modules;}else{S.clients.splice(idx,1);}
         try{await saveClients(`Remove Implementation data: ${snapshot.name}`);S.modal=null;showToast(`${snapshot.name} removed from Implementations`);render();}
@@ -1995,13 +2065,13 @@ document.addEventListener('click',async e=>{
       catch(err){c.modules.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
     } else if(m.type==='add-ams-client'){
       const existingId=document.getElementById('m0')?.value;
-      const rate=parseFloat(document.getElementById('m3')?.value);
+      const rateRaw=document.getElementById('m3')?.value;
+      const rate=rateRaw?parseFloat(rateRaw):undefined;
       const availRaw=document.getElementById('m4')?.value;
       const avail=availRaw?parseFloat(availRaw):undefined;
-      if(!rate||rate<=0){showToast('A valid day rate is required','error');return;}
       if(existingId){
         const c=S.clients.find(x=>x.id===existingId);if(!c)return;
-        c.manDayRate=rate;c.workLog=c.workLog||[];if(avail!==undefined)c.totalAvailableHours=avail;
+        if(rate)c.manDayRate=rate;c.workLog=c.workLog||[];if(avail!==undefined)c.totalAvailableHours=avail;
         S.modal={...m,busy:true};render();
         try{await saveClients(`Enable AMS: ${c.name}`);S.modal=null;showToast(`${c.name} added to AMS`);render();}
         catch(err){delete c.manDayRate;delete c.totalAvailableHours;S.modal=null;showToast('Failed: '+err.message,'error');render();}
@@ -2010,24 +2080,51 @@ document.addEventListener('click',async e=>{
         if(!name){showToast('Pick a client above or enter a new name','error');return;}
         if(S.clients.find(x=>x.name.toLowerCase()===name.toLowerCase())){showToast(`"${name}" already exists — select it above instead`,'error');return;}
         const desc=document.getElementById('m2')?.value.trim();
-        const nc={id:uid(),name,description:desc||'',createdAt:new Date().toISOString(),integrations:[],manDayRate:rate,workLog:[]};
-        if(avail!==undefined)nc.totalAvailableHours=avail;
+        const nc={id:uid(),name,description:desc||'',createdAt:new Date().toISOString(),integrations:[],workLog:[]};
+        if(rate)nc.manDayRate=rate;if(avail!==undefined)nc.totalAvailableHours=avail;
         S.clients.push(nc);S.modal={...m,busy:true};render();
         try{await saveClients(`Add ${name}`);S.modal=null;showToast(`${name} added`);render();}
         catch(err){S.clients.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
       }
     } else if(m.type==='edit-ams-client'){
       const c=S.clients.find(x=>x.id===m.cid);if(!c)return;
-      const rate=parseFloat(document.getElementById('m2')?.value);
-      if(!rate||rate<=0){showToast('A valid day rate is required','error');return;}
+      const rateRaw=document.getElementById('m2')?.value;
       const desc=document.getElementById('m1')?.value.trim();
       const availRaw=document.getElementById('m3')?.value;
       const snapshot={description:c.description,manDayRate:c.manDayRate,totalAvailableHours:c.totalAvailableHours};
-      c.description=desc||'';c.manDayRate=rate;
+      c.description=desc||'';
+      if(rateRaw){c.manDayRate=parseFloat(rateRaw);}else{delete c.manDayRate;}
       if(availRaw){c.totalAvailableHours=parseFloat(availRaw);}else{delete c.totalAvailableHours;}
       S.modal={...m,busy:true};render();
       try{await saveClients(`Edit AMS client: ${c.name}`);S.modal=null;showToast('Saved ✓');navigate('ams-client-detail',{clientId:c.id});}
-      catch(err){Object.assign(c,snapshot);if(snapshot.totalAvailableHours===undefined)delete c.totalAvailableHours;S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      catch(err){Object.assign(c,snapshot);if(snapshot.totalAvailableHours===undefined)delete c.totalAvailableHours;if(snapshot.manDayRate===undefined)delete c.manDayRate;S.modal=null;showToast('Failed: '+err.message,'error');render();}
+    } else if(m.type==='add-ams-entry'||m.type==='edit-ams-entry'){
+      if(!can('edit'))return;
+      const cid=m.cid;const c=S.clients.find(x=>x.id===cid);if(!c)return;
+      const dateRaised=document.getElementById('ae-date')?.value;
+      const hours=parseFloat(document.getElementById('ae-hours')?.value);
+      if(!dateRaised||!hours||hours<=0){showToast('Date and hours are required','error');return;}
+      const fields={dateRaised,raisedBy:document.getElementById('ae-raised')?.value?.trim()||S.user.name,
+        module:document.getElementById('ae-module')?.value?.trim()||'',project:document.getElementById('ae-project')?.value?.trim()||'',
+        description:document.getElementById('ae-desc')?.value?.trim()||'',type:document.getElementById('ae-type')?.value,
+        queryLevel:document.getElementById('ae-level')?.value,modeOfSupport:document.getElementById('ae-mode')?.value,
+        entryStatus:document.getElementById('ae-status')?.value,dependencies:document.getElementById('ae-deps')?.value?.trim()||'',
+        solution:document.getElementById('ae-solution')?.value?.trim()||'',hours};
+      if(!c.workLog)c.workLog=[];
+      if(m.type==='add-ams-entry'){
+        const entry={id:uid(),...fields,loggedAt:new Date().toISOString()};
+        c.workLog.push(entry);S.modal={...m,busy:true};render();
+        try{await saveClients(`Add entry: ${c.name}`);S.modal=null;showToast('Entry added ✓');navigate('ams-client-detail',{clientId:cid});}
+        catch(err){c.workLog.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }else{
+        const idx=c.workLog.findIndex(x=>x.id===m.eid);if(idx<0)return;
+        const original=c.workLog[idx];
+        const snapshot=JSON.parse(JSON.stringify(original));
+        const updated={...original,...fields,edits:[...(original.edits||[]),{description:original.description,hours:original.hours,dateRaised:entryDate(original),editedAt:new Date().toISOString(),editedBy:S.user.name}],lastEditedAt:new Date().toISOString(),lastEditedBy:S.user.name};
+        c.workLog[idx]=updated;S.modal={...m,busy:true};render();
+        try{await saveClients(`Edit entry: ${c.name}`);S.modal=null;showToast('Entry updated ✓');navigate('ams-client-detail',{clientId:cid});}
+        catch(err){c.workLog[idx]=snapshot;S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
     }
   }
 });
