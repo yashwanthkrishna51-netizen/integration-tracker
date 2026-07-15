@@ -28,7 +28,7 @@ module.exports = async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { path, content, sha, message } = req.body || {};
+  const { path, content, message } = req.body || {};
   if (!path || content === undefined) {
     return res.status(400).json({ error: 'path and content required' });
   }
@@ -42,26 +42,45 @@ module.exports = async function handler(req, res) {
     const encryptedB64 = encryptString(plaintext, INTEGTRACK_ENC_KEY);
 
     const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`;
+    const ghHeaders = {
+      Authorization: `token ${GITHUB_PAT}`,
+      Accept: 'application/vnd.github.v3+json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'IntegTrack-Kognoz',
+    };
+
+    // Always fetch the current SHA from GitHub right before writing.
+    // This eliminates the "SHA does not match" 422 error that occurs when
+    // multiple users have the app open simultaneously: each user's in-memory
+    // SHA becomes stale as soon as any other user saves, but by fetching here
+    // we always use the true current SHA regardless of what the client sent.
+    let currentSha = null;
+    const getRes = await fetch(url, { headers: ghHeaders });
+    if (getRes.ok) {
+      const getData = await getRes.json();
+      currentSha = getData.sha;
+    } else if (getRes.status !== 404) {
+      // 404 means file doesn't exist yet (first-time create) — no SHA needed.
+      // Any other status is a genuine GitHub error.
+      const errData = await getRes.json();
+      return res.status(getRes.status).json({ error: errData.message || 'Failed to fetch current file SHA from GitHub' });
+    }
+
     const body = {
       message: message || `Update ${path}`,
       content: Buffer.from(encryptedB64).toString('base64'),
     };
-    if (sha) body.sha = sha;
+    if (currentSha) body.sha = currentSha;
 
-    const r = await fetch(url, {
+    const putRes = await fetch(url, {
       method: 'PUT',
-      headers: {
-        Authorization: `token ${GITHUB_PAT}`,
-        Accept: 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json',
-        'User-Agent': 'IntegTrack-Kognoz',
-      },
+      headers: ghHeaders,
       body: JSON.stringify(body),
     });
 
-    const data = await r.json();
-    if (!r.ok) return res.status(r.status).json({ error: data.message || 'GitHub error', detail: data });
-    return res.status(200).json({ sha: data.content.sha });
+    const putData = await putRes.json();
+    if (!putRes.ok) return res.status(putRes.status).json({ error: putData.message || 'GitHub error', detail: putData });
+    return res.status(200).json({ sha: putData.content.sha });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
