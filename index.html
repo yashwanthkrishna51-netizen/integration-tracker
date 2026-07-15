@@ -204,8 +204,29 @@ async function apiWrite(path,obj,sha,msg){
     const d=await r.json();return d.sha||d.content?.sha;
   }finally{stopLoading();}
 }
-async function saveClients(msg){S.shas.clients=await apiWrite('data/clients.json',S.clients,S.shas.clients,msg||'Update clients');}
-async function saveUsers(msg){S.shas.users=await apiWrite('data/users.json',S.users,S.shas.users,msg||'Update users');}
+async function saveClients(msg){
+  // The server-side write.js always fetches the fresh SHA from GitHub before
+  // writing, so stale-SHA conflicts are resolved there. We still update our
+  // local S.shas.clients with the new SHA returned by the server so the NEXT
+  // save has the freshest possible starting point.
+  // On any error we also refresh our SHA from GitHub so a retry attempt
+  // doesn't compound a stale-SHA problem.
+  try{
+    S.shas.clients=await apiWrite('data/clients.json',S.clients,S.shas.clients,msg||'Update clients');
+  }catch(err){
+    // Refresh our local SHA so the next save attempt starts clean.
+    try{const cl=await apiRead('data/clients.json');S.shas.clients=cl.sha;}catch(_){}
+    throw err;
+  }
+}
+async function saveUsers(msg){
+  try{
+    S.shas.users=await apiWrite('data/users.json',S.users,S.shas.users,msg||'Update users');
+  }catch(err){
+    try{const ul=await apiRead('data/users.json');S.shas.users=ul.sha;}catch(_){}
+    throw err;
+  }
+}
 
 // ─── HELPERS ──────────────────────────────────────────────────────
 function sbadge(s){return`<span class="inline-flex text-xs font-semibold px-2.5 py-0.5 rounded-full ${SBG[s]||SBG['Not Started']}">${esc(s)}</span>`;}
