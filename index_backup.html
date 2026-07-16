@@ -100,7 +100,7 @@ html.dark ::-webkit-scrollbar-thumb{background:#2b3744}
 <div id="app"></div>
 <script>
 // ─── STATE ────────────────────────────────────────────────────────
-const S={user:null,clients:[],users:[],shas:{clients:null,users:null},sessionToken:null,view:'login',params:{},adminTab:'integrations',filter:'all',search:'',modal:null,toast:null,sidebarCollapsed:false,sidebarClientsOpen:true,sort:{key:'name',dir:'asc'},editingTimelineId:null,expandedHistory:new Set(),amsFrom:'',amsTo:'',editingAmsEntryId:null,expandedAmsHistory:new Set(),cmdPaletteOpen:false,cmdQuery:'',recentlyViewed:[],darkMode:false};
+const S={user:null,clients:[],users:[],shas:{clients:null,users:null},sessionToken:null,view:'login',params:{},adminTab:'integrations',filter:'all',search:'',modal:null,toast:null,sidebarCollapsed:false,sidebarClientsOpen:true,sort:{key:'name',dir:'asc'},editingTimelineId:null,expandedHistory:new Set(),amsFrom:'',amsTo:'',editingAmsEntryId:null,expandedAmsHistory:new Set(),cmdPaletteOpen:false,cmdQuery:'',recentlyViewed:[],darkMode:false,bulkImplMode:false,bulkImplCid:null,bulkSelected:new Set()};
 
 try{S.sidebarCollapsed=localStorage.getItem('itk_sb_collapsed')==='1';}catch(e){}
 try{const r=localStorage.getItem('itk_recent');if(r)S.recentlyViewed=JSON.parse(r);}catch(e){}
@@ -110,8 +110,11 @@ if(S.darkMode)document.documentElement.classList.add('dark');
 // ─── CONSTANTS — KOGNOZ BRAND ─────────────────────────────────────
 const STATUSES=['Not Started','In Progress','At Risk','On Hold','Completed'];
 const ROLES=['viewer','editor','admin'];
-const PHASES=['Discovery','Configuration','Data Migration','UAT','Go-Live','Hypercare'];
-const AMS_CATEGORIES=['Bug Fix','Enhancement','Config Change','Support Ticket','Reporting'];
+const PHASES=['BPU','BPU Signoff','CRP','CRP Signoff','UAT','UAT Signoff','Data Migration / Production Migration','Go Live','Hypercare'];
+const AMS_TYPES=['Bug Fix','Enhancement','Config Change','Support Ticket','Reporting','Training','Meeting','Consultation'];
+const AMS_QUERY_LEVELS=['L1 - Low','L2 - Medium','L3 - High','L4 - Critical'];
+const AMS_ENTRY_STATUSES=['Open','In Progress','Closed'];
+const AMS_MODES=['Online / Remote','Offline / In-person'];
 const HOURS_PER_DAY=8;
 const TEAL='0e7490',TEAL_DARK='0d3d4f',MAGENTA='b5179e',VIOLET='7c3aed';
 const SBG={'Completed':'bg-green-100 text-green-700 border border-green-200','In Progress':'bg-cyan-100 text-cyan-800 border border-cyan-200','At Risk':'bg-rose-100 text-rose-700 border border-rose-200','On Hold':'bg-violet-100 text-violet-700 border border-violet-200','Not Started':'bg-gray-100 text-gray-500 border border-gray-200'};
@@ -130,7 +133,6 @@ function recordRecent(view,params){
   if(view==='client-detail'){const c=S.clients.find(x=>x.id===params.clientId);if(c)entry={type:'client',label:c.name,sub:'Integration Client',view,params:{clientId:c.id}};}
   else if(view==='integ-detail'){const c=S.clients.find(x=>x.id===params.clientId);const i=c?.integrations.find(x=>x.id===params.integId);if(c&&i)entry={type:'integ',label:i.name,sub:`Integration · ${c.name}`,view,params:{clientId:c.id,integId:i.id}};}
   else if(view==='impl-client-detail'){const c=S.clients.find(x=>x.id===params.clientId);if(c)entry={type:'implClient',label:c.name,sub:'Implementation Client',view,params:{clientId:c.id}};}
-  else if(view==='impl-project-detail'){const c=S.clients.find(x=>x.id===params.clientId);const p=c?.projects?.find(x=>x.id===params.projectId);if(c&&p)entry={type:'implProject',label:p.name,sub:`Implementation · ${c.name}`,view,params:{clientId:c.id,projectId:p.id}};}
   else if(view==='ams-client-detail'){const c=S.clients.find(x=>x.id===params.clientId);if(c)entry={type:'amsClient',label:c.name,sub:'AMS Client',view,params:{clientId:c.id}};}
   if(!entry)return;
   const key=`${entry.view}:${entry.params.integId||entry.params.projectId||entry.params.clientId}`;
@@ -141,7 +143,7 @@ function recordRecent(view,params){
 }
 function navigate(view,params={}){
   const isRealNav=S.view!==view;
-  const go=()=>{S.view=view;S.params=params;S.filter='all';S.search='';S.modal=null;S.sort={key:'name',dir:'asc'};S.editingTimelineId=null;S.expandedHistory=new Set();recordRecent(view,params);render();};
+  const go=()=>{S.view=view;S.params=params;S.filter='all';S.search='';S.modal=null;S.sort={key:'name',dir:'asc'};S.editingTimelineId=null;S.expandedHistory=new Set();S.bulkImplMode=false;S.bulkImplCid=null;S.bulkSelected=new Set();recordRecent(view,params);render();};
   if(isRealNav&&document.startViewTransition)document.startViewTransition(go);else go();
 }
 function todayStr(){return new Date().toISOString().slice(0,10);}
@@ -205,8 +207,29 @@ async function apiWrite(path,obj,sha,msg){
     const d=await r.json();return d.sha||d.content?.sha;
   }finally{stopLoading();}
 }
-async function saveClients(msg){S.shas.clients=await apiWrite('data/clients.json',S.clients,S.shas.clients,msg||'Update clients');}
-async function saveUsers(msg){S.shas.users=await apiWrite('data/users.json',S.users,S.shas.users,msg||'Update users');}
+async function saveClients(msg){
+  // The server-side write.js always fetches the fresh SHA from GitHub before
+  // writing, so stale-SHA conflicts are resolved there. We still update our
+  // local S.shas.clients with the new SHA returned by the server so the NEXT
+  // save has the freshest possible starting point.
+  // On any error we also refresh our SHA from GitHub so a retry attempt
+  // doesn't compound a stale-SHA problem.
+  try{
+    S.shas.clients=await apiWrite('data/clients.json',S.clients,S.shas.clients,msg||'Update clients');
+  }catch(err){
+    // Refresh our local SHA so the next save attempt starts clean.
+    try{const cl=await apiRead('data/clients.json');S.shas.clients=cl.sha;}catch(_){}
+    throw err;
+  }
+}
+async function saveUsers(msg){
+  try{
+    S.shas.users=await apiWrite('data/users.json',S.users,S.shas.users,msg||'Update users');
+  }catch(err){
+    try{const ul=await apiRead('data/users.json');S.shas.users=ul.sha;}catch(_){}
+    throw err;
+  }
+}
 
 // ─── HELPERS ──────────────────────────────────────────────────────
 function sbadge(s){return`<span class="inline-flex text-xs font-semibold px-2.5 py-0.5 rounded-full ${SBG[s]||SBG['Not Started']}">${esc(s)}</span>`;}
@@ -235,23 +258,22 @@ function brandMark(big){
 let _cmdpResults=[];
 function renderCmdPalette(){
   const q=S.cmdQuery.toLowerCase().trim();
-  const icon={client:'🔗',integ:'⚡',implClient:'🏗️',implProject:'🏗️',amsClient:'🧾'};
+  const icon={client:'🔗',integ:'⚡',implClient:'🏗️',amsClient:'🧾'};
   let list;
   if(q){
     const results=[];
     S.clients.forEach(c=>{
       if(c.name.toLowerCase().includes(q))results.push({type:'client',label:c.name,sub:'Integration Client',view:'client-detail',params:{clientId:c.id}});
       (c.integrations||[]).forEach(i=>{if(i.name.toLowerCase().includes(q))results.push({type:'integ',label:i.name,sub:`Integration · ${c.name}`,view:'integ-detail',params:{clientId:c.id,integId:i.id}});});
-      if(c.projects!==undefined&&c.name.toLowerCase().includes(q))results.push({type:'implClient',label:c.name,sub:'Implementation Client',view:'impl-client-detail',params:{clientId:c.id}});
-      (c.projects||[]).forEach(p=>{if(p.name.toLowerCase().includes(q))results.push({type:'implProject',label:p.name,sub:`Implementation · ${c.name}`,view:'impl-project-detail',params:{clientId:c.id,projectId:p.id}});});
-      if(c.manDayRate!==undefined&&c.name.toLowerCase().includes(q))results.push({type:'amsClient',label:c.name,sub:'AMS Client',view:'ams-client-detail',params:{clientId:c.id}});
+      if(c.modules!==undefined&&c.name.toLowerCase().includes(q))results.push({type:'implClient',label:c.name,sub:'Implementation Client',view:'impl-client-detail',params:{clientId:c.id}});
+      if(c.workLog!==undefined&&c.name.toLowerCase().includes(q))results.push({type:'amsClient',label:c.name,sub:'AMS Client',view:'ams-client-detail',params:{clientId:c.id}});
     });
     list=results.slice(0,20);
   }else{
     list=S.recentlyViewed.filter(r=>{
       const c=S.clients.find(x=>x.id===r.params.clientId);if(!c)return false;
       if(r.view==='integ-detail')return!!c.integrations.find(x=>x.id===r.params.integId);
-      if(r.view==='impl-project-detail')return!!c.projects?.find(x=>x.id===r.params.projectId);
+
       return true;
     });
   }
@@ -304,8 +326,7 @@ function render(){
   else if(S.view==='integ-detail')content=renderIntegDetail(S.params.clientId,S.params.integId);
   else if(S.view==='impl-clients')content=renderImplClientList();
   else if(S.view==='impl-client-detail')content=renderImplClientDetail(S.params.clientId);
-  else if(S.view==='impl-project-detail')content=renderImplProjectDetail(S.params.clientId,S.params.projectId);
-  else if(S.view==='impl-phase-detail')content=renderImplPhaseDetail(S.params.clientId,S.params.projectId,S.params.moduleId,S.params.phase);
+  else if(S.view==='impl-phase-detail')content=renderImplPhaseDetail(S.params.clientId,S.params.moduleId,S.params.phase);
   else if(S.view==='ams-clients')content=renderAmsClientList();
   else if(S.view==='ams-client-detail')content=renderAmsClientDetail(S.params.clientId);
   else if(S.view==='admin')content=can('admin')?renderAdmin():`<div class="p-8 text-rose-500">Access denied</div>`;
@@ -318,7 +339,7 @@ function renderSidebar(){
   const w=collapsed?'4.2rem':'15.5rem';
   const isActive=v=>{
     if(v==='clients')return['clients','client-detail','integ-detail'].includes(S.view);
-    if(v==='impl')return['impl-clients','impl-client-detail','impl-project-detail','impl-phase-detail'].includes(S.view);
+    if(v==='impl')return['impl-clients','impl-client-detail','impl-phase-detail'].includes(S.view);
     if(v==='ams')return['ams-clients','ams-client-detail'].includes(S.view);
     return S.view===v;
   };
@@ -427,14 +448,14 @@ function renderDashboard(){
   const thisWeekUpdates=all.reduce((n,i)=>n+(i.timeline||[]).filter(t=>new Date(t.date)>=weekAgo).length,0);
   const needsAttn=[...overdue.map(i=>({...i,reason:'overdue'})),...stale.map(i=>({...i,reason:'stale'}))].sort((a,b)=>(a.reason==='overdue'&&b.reason!=='overdue')?-1:1);
 
-  const implClients=S.clients.filter(c=>c.projects!==undefined);
-  const allProjects=implClients.flatMap(c=>(c.projects||[]).map(p=>({...p,clientName:c.name,clientId:c.id})));
-  const allPhases=allProjects.flatMap(p=>(p.modules||[]).flatMap(m=>(m.phases||[]).map(ph=>({...ph}))));
+  const implClients=S.clients.filter(c=>c.modules!==undefined);
+  const allModules=implClients.flatMap(c=>(c.modules||[]).map(m=>({...m,clientName:c.name,clientId:c.id})));
+  const allPhases=allModules.flatMap(m=>(m.phases||[]).map(ph=>({...ph})));
   const implTotalPhases=allPhases.length;
-  const implAtRiskProjects=allProjects.filter(p=>implProgress(p).atRisk>0);
-  const implActiveProjects=allProjects.filter(p=>implProgress(p).pct<100);
+  const implAtRiskClients=implClients.filter(c=>implProgress(c).atRisk>0);
+  const implActiveClients=implClients.filter(c=>implProgress(c).pct<100);
 
-  const amsClients=S.clients.filter(c=>c.manDayRate!==undefined);
+  const amsClients=S.clients.filter(c=>c.workLog!==undefined);
   const now=new Date();
   const monthStart=new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);
   const monthEnd=todayStr();
@@ -463,15 +484,15 @@ function renderDashboard(){
         <button data-act="nav-impl" class="text-xs text-[#0e7490] hover:underline font-medium">View all →</button>
       </div>
       <div class="grid grid-cols-2 gap-3 mb-4">
-        <div><div class="text-xl font-extrabold text-gray-700">${implActiveProjects.length}</div><div class="text-xs text-gray-500">Active Projects</div></div>
-        <div><div class="text-xl font-extrabold ${implAtRiskProjects.length?'text-rose-600':'text-gray-700'}">${implAtRiskProjects.length}</div><div class="text-xs text-gray-500">Need Attention</div></div>
+        <div><div class="text-xl font-extrabold text-gray-700">${implActiveClients.length}</div><div class="text-xs text-gray-500">Active Clients</div></div>
+        <div><div class="text-xl font-extrabold ${implAtRiskClients.length?'text-rose-600':'text-gray-700'}">${implAtRiskClients.length}</div><div class="text-xs text-gray-500">Need Attention</div></div>
       </div>
       ${implTotalPhases?`<div class="flex gap-0.5 h-2.5 rounded-full overflow-hidden bg-gray-100 mb-1">
         ${STATUSES.map(s=>{const n=allPhases.filter(ph=>ph.status===s).length;return n?`<div class="${SDOT[s]} bar-fill" style="width:${Math.round(n/implTotalPhases*100)}%" title="${s}: ${n}"></div>`:'';}).join('')}
       </div>
       <div class="text-xs text-gray-400 mb-1">${implTotalPhases} phases tracked across ${implClients.length} client${implClients.length!==1?'s':''}</div>`:`<div class="text-xs text-gray-400 text-center py-3">${emptyIcon('chart')}No implementation data yet.</div>`}
-      ${implAtRiskProjects.length?`<div class="space-y-1.5 mt-3 pt-3 border-t border-gray-50">${implAtRiskProjects.slice(0,3).map((p,idx)=>`<div data-act="open-impl-project" data-cid="${p.clientId}" data-pid="${p.id}" style="animation-delay:${idx*25}ms" class="row-in flex items-center justify-between text-xs cursor-pointer hover:bg-rose-50 -mx-1 px-1 py-1 rounded-lg text-rose-600 transition-colors">
-        <span class="truncate" title="${esc(p.clientName)} · ${esc(p.name)}">${esc(p.clientName)} · ${esc(p.name)}</span><span class="shrink-0">⚠</span>
+      ${implAtRiskClients.length?`<div class="space-y-1.5 mt-3 pt-3 border-t border-gray-50">${implAtRiskClients.slice(0,3).map((c,idx)=>`<div data-act="open-impl-client" data-id="${c.id}" style="animation-delay:${idx*25}ms" class="row-in flex items-center justify-between text-xs cursor-pointer hover:bg-rose-50 -mx-1 px-1 py-1 rounded-lg text-rose-600 transition-colors">
+        <span class="truncate" title="${esc(c.name)}">${esc(c.name)}</span><span class="shrink-0">⚠</span>
       </div>`).join('')}</div>`:''}
     </div>
 
@@ -579,18 +600,18 @@ function renderClientList(){
 }
 
 // ─── IMPLEMENTATIONS ──────────────────────────────────────────────
-function implProgress(project){
+function implProgress(client){
   let total=0,completed=0,atRisk=0;
-  (project.modules||[]).forEach(m=>(m.phases||[]).forEach(ph=>{total++;if(ph.status==='Completed')completed++;if(ph.status==='At Risk')atRisk++;}));
+  (client.modules||[]).forEach(m=>(m.phases||[]).forEach(ph=>{total++;if(ph.status==='Completed')completed++;if(ph.status==='At Risk')atRisk++;}));
   return{total,completed,atRisk,pct:total?Math.round(completed/total*100):0};
 }
 function renderImplClientList(){
-  const implClients=S.clients.filter(c=>c.projects!==undefined);
-  const totalProjects=implClients.reduce((a,c)=>a+(c.projects?.length||0),0);
-  const atRiskProjects=implClients.reduce((a,c)=>a+(c.projects||[]).filter(p=>implProgress(p).atRisk>0).length,0);
+  const implClients=S.clients.filter(c=>c.modules!==undefined);
+  const totalModules=implClients.reduce((a,c)=>a+(c.modules?.length||0),0);
+  const atRiskClients=implClients.filter(c=>implProgress(c).atRisk>0).length;
   return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
   <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-    ${[['Clients',implClients.length,'text-[#0e7490]','bg-[#0e7490]/10'],['Total Projects',totalProjects,'text-gray-700','bg-gray-100'],['Projects with Risk',atRiskProjects,'text-rose-600','bg-rose-50']].map(([l,v,tc,bg])=>`<div class="${bg} rounded-2xl p-4"><div class="text-2xl font-bold ${tc}">${v}</div><div class="text-xs text-gray-500 mt-0.5">${l}</div></div>`).join('')}
+    ${[['Clients',implClients.length,'text-[#0e7490]','bg-[#0e7490]/10'],['Total Modules',totalModules,'text-gray-700','bg-gray-100'],['Clients with Risk',atRiskClients,'text-rose-600','bg-rose-50']].map(([l,v,tc,bg])=>`<div class="${bg} rounded-2xl p-4"><div class="text-2xl font-bold ${tc}">${v}</div><div class="text-xs text-gray-500 mt-0.5">${l}</div></div>`).join('')}
   </div>
   <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
     <h1 class="text-xl font-bold text-gray-900">Implementations</h1>
@@ -598,15 +619,16 @@ function renderImplClientList(){
   </div>
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
     ${implClients.length?implClients.map((c,idx)=>{
-      const projs=c.projects||[];
-      const anyRisk=projs.some(p=>implProgress(p).atRisk>0);
+      const mods=c.modules||[];
+      const pr=implProgress(c);
       return`<div data-act="open-impl-client" data-id="${c.id}" style="animation-delay:${Math.min(idx*35,400)}ms" class="row-in card-hover bg-white rounded-2xl border border-gray-100 p-5 hover:border-[#0e7490]/30 transition cursor-pointer relative overflow-hidden">
-        <div class="absolute left-0 top-0 bottom-0 w-1 ${anyRisk?'bg-rose-500':'bg-green-500'}"></div>
+        <div class="absolute left-0 top-0 bottom-0 w-1 ${pr.atRisk>0?'bg-rose-500':'bg-green-500'}"></div>
         <div class="flex items-start justify-between mb-2 pl-1.5">
           <div class="flex-1 min-w-0 pr-2"><div class="font-semibold text-gray-900" title="${esc(c.name)}">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 mt-0.5 truncate" title="${esc(c.description)}">${esc(c.description)}</div>`:''}</div>
-          <span class="text-2xl font-extrabold text-[#0e7490] opacity-60 shrink-0">${projs.length}</span>
+          <span class="text-2xl font-extrabold text-[#0e7490] opacity-60 shrink-0">${mods.length}</span>
         </div>
-        <div class="text-xs text-gray-400 pl-1.5">${projs.length} project${projs.length!==1?'s':''}</div>
+        <div class="text-xs text-gray-400 pl-1.5">${mods.length} module${mods.length!==1?'s':''}</div>
+        ${pr.atRisk>0?`<div class="text-xs text-rose-500 pl-1.5 mt-1">${pr.atRisk} phase${pr.atRisk!==1?'s':''} at risk</div>`:''}
       </div>`;
     }).join(''):`<div class="col-span-3 text-center py-16 text-gray-400">${emptyIcon('inbox')}No implementation clients yet. Add one to get started.</div>`}
   </div>
@@ -616,93 +638,105 @@ function renderImplClientList(){
 function renderImplClientDetail(clientId){
   const c=S.clients.find(x=>x.id===clientId);
   if(!c)return`<div class="p-8 text-gray-400">Client not found</div>`;
+  const pr=implProgress(c);
+  const bulk=S.bulkImplMode&&S.bulkImplCid===c.id;
+  const sel=S.bulkSelected;
+  const selCount=sel.size;
   return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
   <div class="flex items-center gap-2 text-sm text-gray-400 mb-4">
     <button data-act="nav-impl" class="hover:text-[#0e7490]">Implementations</button><span>›</span>
     <span class="text-gray-900 font-medium">${esc(c.name)}</span>
   </div>
   <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
-    <div><h1 class="text-xl font-bold text-gray-900">${esc(c.name)}</h1>${c.description?`<p class="text-sm text-gray-400 mt-0.5">${esc(c.description)}</p>`:''}</div>
-    <button data-act="modal-open" data-modal="add-impl-project" data-cid="${c.id}" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Project</button>
-  </div>
-  <div class="space-y-3">
-    ${(c.projects||[]).length?c.projects.map(p=>{
-      const pr=implProgress(p);
-      return`<div data-act="open-impl-project" data-cid="${c.id}" data-pid="${p.id}" class="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md hover:border-[#0e7490]/30 transition cursor-pointer">
-        <div class="flex items-start justify-between gap-3 mb-2">
-          <div class="min-w-0">
-            <div class="font-medium text-gray-900">${esc(p.name)}</div>
-            <div class="text-xs text-gray-400 mt-0.5">${p.projectLead?`Lead: ${esc(p.projectLead)} · `:''}${p.targetGoLive?`Target Go-Live: ${fmtDate(p.targetGoLive)}`:'No go-live date set'}</div>
-          </div>
-          ${pr.atRisk>0?`<span class="text-xs font-medium text-rose-600 bg-rose-50 rounded-lg px-2.5 py-1 whitespace-nowrap">⚠ ${pr.atRisk} at risk</span>`:''}
-        </div>
-        <div class="flex items-center gap-2">
-          <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-[#0e7490] rounded-full" style="width:${pr.pct}%"></div></div>
-          <span class="text-xs text-gray-400 shrink-0">${pr.pct}% complete</span>
-        </div>
-      </div>`;
-    }).join(''):`<div class="text-center py-16 text-gray-400">${emptyIcon('inbox')}No projects yet for this client.</div>`}
-  </div>
-</div>`;
-}
-
-function renderImplProjectDetail(clientId,projectId){
-  const c=S.clients.find(x=>x.id===clientId);
-  const p=c?.projects?.find(x=>x.id===projectId);
-  if(!c||!p)return`<div class="p-8 text-gray-400">Project not found</div>`;
-  return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
-  <div class="flex items-center gap-2 text-sm text-gray-400 mb-4">
-    <button data-act="nav-impl" class="hover:text-[#0e7490]">Implementations</button><span>›</span>
-    <button data-act="open-impl-client" data-id="${c.id}" class="hover:text-[#0e7490]">${esc(c.name)}</button><span>›</span>
-    <span class="text-gray-900 font-medium">${esc(p.name)}</span>
-  </div>
-  <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
-    <div><h1 class="text-xl font-bold text-gray-900">${esc(p.name)}</h1>
-      <p class="text-sm text-gray-400 mt-0.5">${p.projectLead?`Lead: ${esc(p.projectLead)} · `:''}${p.targetGoLive?`Target Go-Live: ${fmtDate(p.targetGoLive)}`:'No go-live date set'}</p>
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">${esc(c.name)}</h1>
+      ${c.description?`<p class="text-sm text-gray-400 mt-0.5">${esc(c.description)}</p>`:''}
+      ${pr.total>0?`<p class="text-xs text-gray-400 mt-1">${pr.completed}/${pr.total} phases complete · ${pr.pct}%${pr.atRisk>0?` · <span class="text-rose-500">${pr.atRisk} at risk</span>`:''}</p>`:''}
     </div>
-    <div class="flex gap-2">
-      <button data-act="modal-open" data-modal="add-impl-module" data-cid="${c.id}" data-pid="${p.id}" class="bg-green-50 border border-green-200 text-green-700 text-xs font-medium px-3 py-2 rounded-xl hover:bg-green-100 transition">+ Add Module</button>
-      <button data-act="exp-impl-pdf" data-cid="${c.id}" data-pid="${p.id}" class="btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">📄 Export PDF</button>
-      ${can('admin')?`<button data-act="delete-impl-project" data-cid="${c.id}" data-pid="${p.id}" class="text-rose-400 hover:text-rose-600 text-xs px-2">Delete</button>`:''}
+    <div class="flex gap-2 flex-wrap">
+      ${bulk?`<span class="text-xs text-[#0e7490] bg-[#0e7490]/10 px-3 py-2 rounded-xl font-medium">Select phases to mark complete</span>
+        <button data-act="toggle-bulk-impl" data-cid="${c.id}" class="text-xs text-gray-500 border border-gray-200 px-3 py-2 rounded-xl hover:bg-gray-50 transition">✕ Cancel</button>`
+      :`${can('admin')?`<button data-act="toggle-bulk-impl" data-cid="${c.id}" class="bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium px-3 py-2 rounded-xl hover:bg-amber-100 transition">✓ Bulk Mark Complete</button>`:''}
+        <button data-act="modal-open" data-modal="add-impl-module" data-cid="${c.id}" class="bg-green-50 border border-green-200 text-green-700 text-xs font-medium px-3 py-2 rounded-xl hover:bg-green-100 transition">+ Add Module</button>
+        <button data-act="exp-impl-pdf" data-cid="${c.id}" class="btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">📄 Export PDF</button>
+        ${can('admin')?`<button data-act="delete-impl-client" data-id="${c.id}" class="text-rose-400 hover:text-rose-600 text-xs px-2">Remove Client</button>`:''}`}
     </div>
   </div>
-  <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden overflow-x-auto">
+  ${pr.total>0?`<div class="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-5"><div class="h-full bg-[#0e7490] rounded-full bar-fill" style="width:${pr.pct}%"></div></div>`:''}
+  <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden overflow-x-auto${bulk?' ring-2 ring-amber-300':''}">
     <table class="w-full text-sm">
       <thead class="border-b border-gray-100 bg-gray-50 sticky-head">
-        <tr><th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide sticky left-0 bg-gray-50">Module</th>
-        ${PHASES.map(ph=>`<th class="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">${ph}</th>`).join('')}</tr>
+        <tr><th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide sticky left-0 bg-gray-50 min-w-[160px]">Module</th>
+        ${PHASES.map(ph=>`<th class="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide min-w-[120px]">${ph}</th>`).join('')}</tr>
       </thead>
       <tbody class="divide-y divide-gray-50">
-        ${(p.modules||[]).length?p.modules.map(m=>`<tr>
-          <td class="px-4 py-3 font-medium text-gray-900 whitespace-nowrap sticky left-0 bg-white">${esc(m.name)}</td>
+        ${(c.modules||[]).length?(c.modules||[]).map(m=>`<tr>
+          <td class="px-4 py-3 font-medium text-gray-900 whitespace-nowrap sticky left-0 bg-white">
+            <div class="flex items-center justify-between gap-2">
+              <span>${esc(m.name)}</span>
+              ${!bulk&&can('admin')?`<button data-act="delete-impl-module" data-cid="${c.id}" data-mid="${m.id}" title="Delete module" class="text-gray-200 hover:text-rose-500 transition text-sm leading-none shrink-0">✕</button>`:''}
+            </div>
+          </td>
           ${PHASES.map(phName=>{
             const ph=(m.phases||[]).find(x=>x.name===phName)||{name:phName,status:'Not Started',updates:[]};
+            const isDone=ph.status==='Completed';
+            const key=`${m.id}:${phName}`;
+            const isSel=sel.has(key);
+            if(bulk){
+              if(isDone){
+                return`<td class="px-2 py-2 text-center opacity-30" title="Already completed">
+                  ${sbadge(ph.status)}
+                </td>`;
+              }
+              return`<td class="px-2 py-2 text-center">
+                <button data-act="toggle-bulk-phase" data-cid="${c.id}" data-mid="${m.id}" data-phase="${esc(phName)}" class="w-full relative group">
+                  <div class="absolute inset-0.5 rounded-lg pointer-events-none ${isSel?'ring-2 ring-[#0e7490] ring-offset-1 bg-[#0e7490]/5':'group-hover:ring-1 group-hover:ring-amber-300 group-hover:bg-amber-50'}"></div>
+                  ${sbadge(ph.status)}
+                  <div class="text-[10px] font-semibold mt-0.5 ${isSel?'text-[#0e7490]':'text-gray-300'}">${isSel?'✓ Selected':'tap to select'}</div>
+                </button>
+              </td>`;
+            }
             return`<td class="px-2 py-2 text-center">
-              <button data-act="open-impl-phase" data-cid="${c.id}" data-pid="${p.id}" data-mid="${m.id}" data-phase="${esc(phName)}" class="w-full">
+              <button data-act="open-impl-phase" data-cid="${c.id}" data-mid="${m.id}" data-phase="${esc(phName)}" class="w-full">
                 ${sbadge(ph.status)}
                 ${ph.updates?.length?`<div class="text-[10px] text-gray-400 mt-0.5">${ph.updates.length} update${ph.updates.length!==1?'s':''}</div>`:''}
+                ${ph.assignee?`<div class="text-[10px] text-gray-400 truncate mt-0.5" title="${esc(ph.assignee)}">${esc(ph.assignee)}</div>`:''}
               </button>
             </td>`;
           }).join('')}
-        </tr>`).join(''):`<tr><td colspan="${PHASES.length+1}" class="text-center py-12 text-gray-400 text-sm">No modules yet. Add one to start tracking phases.</td></tr>`}
+        </tr>`).join(''):`<tr><td colspan="${PHASES.length+1}" class="text-center py-12 text-gray-400 text-sm">${emptyIcon('inbox')}No modules yet. Add one to start tracking phases.</td></tr>`}
       </tbody>
     </table>
   </div>
+  ${bulk?`<div class="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 shadow-xl px-6 py-4 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-bold text-amber-700">${selCount}</div>
+      <div>
+        <div class="font-semibold text-gray-900 text-sm">${selCount===0?'No phases selected':selCount===1?'1 phase selected':`${selCount} phases selected`}</div>
+        <div class="text-xs text-gray-400">Already-completed phases are excluded and shown greyed out</div>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <button data-act="toggle-bulk-impl" data-cid="${c.id}" class="text-sm text-gray-500 border border-gray-200 px-4 py-2 rounded-xl hover:bg-gray-50 transition">Cancel</button>
+      <button data-act="bulk-mark-complete" data-cid="${c.id}" ${selCount===0?'disabled class="bg-gray-100 text-gray-400 text-sm font-semibold px-5 py-2 rounded-xl cursor-not-allowed"':'class="btn-grad text-white text-sm font-semibold px-5 py-2 rounded-xl transition"'}>
+        ✓ Mark ${selCount||''} Phase${selCount===1?'':'s'} Complete
+      </button>
+    </div>
+  </div>
+  <div class="h-20"></div>`:''}
 </div>`;
 }
 
-function renderImplPhaseDetail(clientId,projectId,moduleId,phaseName){
+function renderImplPhaseDetail(clientId,moduleId,phaseName){
   const c=S.clients.find(x=>x.id===clientId);
-  const p=c?.projects?.find(x=>x.id===projectId);
-  const mod=p?.modules?.find(x=>x.id===moduleId);
+  const mod=(c?.modules||[]).find(x=>x.id===moduleId);
   const ph=mod?.phases?.find(x=>x.name===phaseName);
-  if(!c||!p||!mod||!ph)return`<div class="p-8 text-gray-400">Not found</div>`;
+  if(!c||!mod||!ph)return`<div class="p-8 text-gray-400">Not found</div>`;
   if(!ph.updates)ph.updates=[];
   return`<div class="max-w-6xl mx-auto px-6 py-7 fade">
   <div class="flex items-center gap-2 text-sm text-gray-400 mb-4 flex-wrap">
     <button data-act="nav-impl" class="hover:text-[#0e7490]">Implementations</button><span>›</span>
     <button data-act="open-impl-client" data-id="${c.id}" class="hover:text-[#0e7490]">${esc(c.name)}</button><span>›</span>
-    <button data-act="open-impl-project" data-cid="${c.id}" data-pid="${p.id}" class="hover:text-[#0e7490]">${esc(p.name)}</button><span>›</span>
     <span class="text-gray-900 font-medium truncate max-w-xs" title="${esc(mod.name)} · ${esc(phaseName)}">${esc(mod.name)} · ${esc(phaseName)}</span>
   </div>
   <div class="flex items-center gap-3 mb-2 flex-wrap">
@@ -715,6 +749,10 @@ function renderImplPhaseDetail(clientId,projectId,moduleId,phaseName){
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Status</label>
           ${can('edit')?`<select id="ip-status" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${STATUSES.map(s=>`<option${s===ph.status?' selected':''}>${s}</option>`).join('')}</select>`:sbadge(ph.status)}
         </div>
+        <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Assignee</label>
+          ${can('edit')?`<input id="ip-assignee" type="text" value="${esc(ph.assignee||'')}" placeholder="Who is responsible for this phase?" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`:
+          `<p class="text-sm text-gray-700">${esc(ph.assignee||'—')}</p>`}
+        </div>
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Start Date</label>
           ${can('edit')?`<input id="ip-start" type="date" value="${esc(ph.startDate||'')}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`:
           `<p class="text-sm text-gray-700">${fmtDate(ph.startDate)}</p>`}
@@ -723,7 +761,15 @@ function renderImplPhaseDetail(clientId,projectId,moduleId,phaseName){
           ${can('edit')?`<input id="ip-target" type="date" value="${esc(ph.targetDate||'')}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`:
           `<p class="text-sm text-gray-700">${fmtDate(ph.targetDate)}</p>`}
         </div>
-        ${can('edit')?`<button data-act="save-impl-phase" data-cid="${c.id}" data-pid="${p.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" class="w-full btn-grad text-white font-semibold rounded-xl py-2.5 text-sm transition">Save Changes</button>`:''}
+        <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Current Activity</label>
+          ${can('edit')?`<textarea id="ip-activity" rows="3" placeholder="What is currently happening in this phase?" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(ph.currentActivity||'')}</textarea>`:
+          `<p class="text-sm text-gray-700 leading-relaxed">${esc(ph.currentActivity||'—')}</p>`}
+        </div>
+        <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Next Action</label>
+          ${can('edit')?`<textarea id="ip-next" rows="2" placeholder="What is the next planned step?" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(ph.nextAction||'')}</textarea>`:
+          `<p class="text-sm text-gray-700">${esc(ph.nextAction||'—')}</p>`}
+        </div>
+        ${can('edit')?`<button data-act="save-impl-phase" data-cid="${c.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" class="w-full btn-grad text-white font-semibold rounded-xl py-2.5 text-sm transition">Save Changes</button>`:''}
       </div>
     </div>
     <div class="bg-white rounded-2xl border border-gray-100 p-6">
@@ -732,7 +778,11 @@ function renderImplPhaseDetail(clientId,projectId,moduleId,phaseName){
       </div>
       ${can('edit')?`<div class="mb-4">
         <textarea id="ip-update-input" rows="3" placeholder="What happened? Current status?" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none mb-2"></textarea>
-        <button data-act="add-impl-update" data-cid="${c.id}" data-pid="${p.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" class="w-full text-sm font-medium bg-gray-50 hover:bg-[#0e7490]/10 hover:text-[#0e7490] text-gray-700 border border-gray-200 rounded-xl py-2 transition">+ Add Update</button>
+        <div class="grid grid-cols-2 gap-2 mb-2">
+          <input id="ip-attach-label" type="text" placeholder="Link label e.g. Signoff Mail (optional)" class="border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+          <input id="ip-attach-url" type="url" placeholder="Paste SharePoint / URL (optional)" class="border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+        </div>
+        <button data-act="add-impl-update" data-cid="${c.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" class="w-full text-sm font-medium bg-gray-50 hover:bg-[#0e7490]/10 hover:text-[#0e7490] text-gray-700 border border-gray-200 rounded-xl py-2 transition">+ Add Update</button>
       </div>`:''}
       <div class="space-y-3 max-h-[440px] overflow-y-auto pr-1">
         ${!ph.updates.length?`<div class="text-sm text-gray-400 text-center py-8">${emptyIcon('clock')}No updates yet</div>`:
@@ -744,10 +794,14 @@ function renderImplPhaseDetail(clientId,projectId,moduleId,phaseName){
             return`<div class="relative pl-5 ${idx<arr.length-1?'pb-3 border-l-2 border-gray-100':''}">
               <div class="absolute -left-[5px] top-1 w-2.5 h-2.5 bg-[#0e7490] rounded-full border-2 border-white ring-1 ring-[#0e7490]/30"></div>
               <div class="text-xs font-semibold text-[#0e7490] mb-1">${esc(t.date)} · ${esc(t.addedBy||'')}</div>
-              <textarea id="edit-tl-${t.id}" rows="3" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(t.update)}</textarea>
+              <textarea id="edit-tl-${t.id}" rows="3" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none mb-2">${esc(t.update)}</textarea>
+              <div class="grid grid-cols-2 gap-2 mb-2">
+                <input id="eat-label-${t.id}" type="text" placeholder="Link label (optional)" value="${esc(t.attachment?.label||'')}" class="border border-gray-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+                <input id="eat-url-${t.id}" type="url" placeholder="Paste URL (optional)" value="${esc(t.attachment?.url||'')}" class="border border-gray-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+              </div>
               <div class="flex gap-2 mt-2">
                 <button data-act="cancel-edit-timeline" class="flex-1 text-xs font-medium text-gray-500 border border-gray-200 rounded-lg py-1.5 hover:bg-gray-50 transition">Cancel</button>
-                <button data-act="save-edit-impl-update" data-cid="${c.id}" data-pid="${p.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" data-tid="${t.id}" class="flex-1 text-xs font-semibold text-white bg-[#0e7490] rounded-lg py-1.5 hover:bg-[#0d3d4f] transition">Save Edit</button>
+                <button data-act="save-edit-impl-update" data-cid="${c.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" data-tid="${t.id}" class="flex-1 text-xs font-semibold text-white bg-[#0e7490] rounded-lg py-1.5 hover:bg-[#0d3d4f] transition">Save Edit</button>
               </div>
             </div>`;
           }
@@ -757,10 +811,12 @@ function renderImplPhaseDetail(clientId,projectId,moduleId,phaseName){
             <div class="text-xs font-semibold text-[#0e7490] mb-1">${esc(t.date)} · ${esc(t.addedBy||'')}</div>
             <div class="flex items-center gap-2 shrink-0">
               ${can('edit')?`<button data-act="edit-timeline" data-tid="${t.id}" class="text-[10px] text-gray-300 hover:text-[#0e7490]">Edit</button>`:''}
+              ${can('admin')?`<button data-act="delete-impl-update" data-cid="${c.id}" data-mid="${mod.id}" data-phase="${esc(phaseName)}" data-tid="${t.id}" class="text-[10px] text-gray-300 hover:text-rose-500">Delete</button>`:''}
               <button data-act="copy-update" data-text="${esc(t.update)}" class="text-[10px] text-gray-300 hover:text-[#0e7490]">Copy</button>
             </div>
           </div>
           <p class="text-sm text-gray-700 leading-relaxed">${esc(t.update)}</p>
+          ${t.attachment?.url?`<a href="${esc(t.attachment.url)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-[11px] text-[#0e7490] hover:underline mt-1 bg-[#0e7490]/8 px-2 py-0.5 rounded-full">🔗 ${esc(t.attachment.label||'Attachment')}</a>`:''}
           <div class="flex items-center gap-3 mt-1 flex-wrap">
             ${t.addedAt?`<span class="text-xs text-gray-400">${fmtDate(t.addedAt)}</span>`:''}
             ${hasHistory?`<button data-act="toggle-history" data-tid="${t.id}" class="text-xs text-amber-600 hover:text-amber-700 font-medium">✎ edited${t.edits.length>1?` (${t.edits.length}×)`:''} — ${isExpanded?'hide':'view'} history</button>`:''}
@@ -777,28 +833,31 @@ function renderImplPhaseDetail(clientId,projectId,moduleId,phaseName){
 }
 
 // ─── AMS ──────────────────────────────────────────────────────────
-function amsEntryAmount(hours,rate){return(hours/HOURS_PER_DAY)*rate;}
+function amsEntryAmount(hours,rate){if(!rate)return null;return(hours/HOURS_PER_DAY)*rate;}
+function amsStatusBadge(s){const m={'Open':'bg-blue-50 text-blue-700 border-blue-200','In Progress':'bg-amber-50 text-amber-700 border-amber-200','Closed':'bg-green-50 text-green-700 border-green-200'};return`<span class="text-xs font-medium border ${m[s]||'bg-gray-50 text-gray-600 border-gray-200'} px-2 py-0.5 rounded-full">${esc(s||'Open')}</span>`;}
+function entryDate(e){return e.dateRaised||e.date||''}
+function entryType(e){return e.type||e.category||'—'}
+function entryRaisedBy(e){return e.raisedBy||e.loggedBy||'—'}
 function amsTotals(client,fromDate,toDate){
   const allLog=client.workLog||[];
-  const log=allLog.filter(e=>(!fromDate||e.date>=fromDate)&&(!toDate||e.date<=toDate));
+  const log=allLog.filter(e=>(!fromDate||entryDate(e)>=fromDate)&&(!toDate||entryDate(e)<=toDate));
   const totalHours=log.reduce((a,e)=>a+Number(e.hours||0),0);
   const allTimeHours=allLog.reduce((a,e)=>a+Number(e.hours||0),0);
   const bucket=client.totalAvailableHours;
   const hasBucket=bucket!==undefined&&bucket!==null&&bucket>0;
-  // Bucket depletes over the client's whole history, not per invoice — so a given
-  // billing period only gets billed for whatever's left after earlier hours ate into it.
+  const hasRate=!!(client.manDayRate>0);
   let billableHours=totalHours,coveredHours=0,balanceAvailable=null;
   if(hasBucket){
-    const hoursBeforePeriod=fromDate?allLog.filter(e=>e.date<fromDate).reduce((a,e)=>a+Number(e.hours||0),0):0;
+    const hoursBeforePeriod=fromDate?allLog.filter(e=>entryDate(e)<fromDate).reduce((a,e)=>a+Number(e.hours||0),0):0;
     const remainingAtPeriodStart=Math.max(0,bucket-hoursBeforePeriod);
     coveredHours=Math.min(totalHours,remainingAtPeriodStart);
     billableHours=Math.max(0,totalHours-remainingAtPeriodStart);
     balanceAvailable=Math.max(0,bucket-allTimeHours);
   }
-  const totalAmount=amsEntryAmount(billableHours,client.manDayRate||0);
-  const byCategory={};
-  log.forEach(e=>{byCategory[e.category]=(byCategory[e.category]||0)+Number(e.hours||0);});
-  return{log,totalHours,totalAmount,byCategory,hasBucket,totalAvailableHours:bucket,billableHours,coveredHours,consumedAllTime:allTimeHours,balanceAvailable};
+  const totalAmount=hasRate?(amsEntryAmount(billableHours,client.manDayRate)||0):null;
+  const byType={};
+  log.forEach(e=>{const tp=entryType(e);byType[tp]=(byType[tp]||0)+Number(e.hours||0);});
+  return{log,totalHours,totalAmount,byType,hasRate,hasBucket,totalAvailableHours:bucket,billableHours,coveredHours,consumedAllTime:allTimeHours,balanceAvailable};
 }
 function renderAmsClientList(){
   return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
@@ -807,13 +866,13 @@ function renderAmsClientList(){
     ${can('admin')?`<button data-act="modal-open" data-modal="add-ams-client" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Client</button>`:''}
   </div>
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-    ${(()=>{const amsClients=S.clients.filter(c=>c.manDayRate!==undefined);return amsClients.length?amsClients.map((c,idx)=>{
+    ${(()=>{const amsClients=S.clients.filter(c=>c.workLog!==undefined);return amsClients.length?amsClients.map((c,idx)=>{
       const t=amsTotals(c,'','');
       return`<div data-act="open-ams-client" data-id="${c.id}" style="animation-delay:${Math.min(idx*35,400)}ms" class="row-in card-hover bg-white rounded-2xl border border-gray-100 p-5 hover:border-[#0e7490]/30 transition cursor-pointer">
         <div class="font-semibold text-gray-900 mb-1" title="${esc(c.name)}">${esc(c.name)}</div>
         ${c.description?`<div class="text-xs text-gray-400 mb-3 truncate" title="${esc(c.description)}">${esc(c.description)}</div>`:''}
         <div class="text-xs text-gray-500">${t.totalHours.toFixed(1)} hours logged total</div>
-        ${can('admin')?`<div class="text-xs text-gray-400 mt-1">₹${(c.manDayRate||0).toLocaleString('en-IN')}/day rate</div>`:''}
+        ${can('admin')&&c.manDayRate?`<div class="text-xs text-gray-400 mt-1">₹${c.manDayRate.toLocaleString('en-IN')}/day rate</div>`:can('admin')?`<div class="text-xs text-gray-400 mt-1">Retainer (no rate)</div>`:''}
         ${t.hasBucket?`<div class="text-xs mt-1 ${t.balanceAvailable>0?'text-green-600':'text-rose-600'} font-medium">${t.balanceAvailable.toFixed(1)} / ${t.totalAvailableHours.toFixed(1)} hrs available</div>`:''}
       </div>`;
     }).join(''):`<div class="col-span-3 text-center py-16 text-gray-400">${emptyIcon('hours')}No AMS clients yet.</div>`;})()}
@@ -825,30 +884,22 @@ function renderAmsClientDetail(clientId){
   const c=S.clients.find(x=>x.id===clientId);
   if(!c)return`<div class="p-8 text-gray-400">Client not found</div>`;
   const t=amsTotals(c,S.amsFrom,S.amsTo);
-  const sorted=[...t.log].sort((a,b)=>b.date.localeCompare(a.date));
-  return`<div class="max-w-6xl mx-auto px-6 py-7 fade">
+  const sorted=[...t.log].sort((a,b)=>entryDate(b).localeCompare(entryDate(a)));
+  const COLS=['#','Date Raised','Raised / Attended By','Module / Meeting','Project','Description','Type','Query Level','Dependencies','Status','Solution Discussed','Mode of Support','Hours'];
+  return`<div class="max-w-full mx-auto px-6 py-7 fade">
   <div class="flex items-center gap-2 text-sm text-gray-400 mb-4">
     <button data-act="nav-ams" class="hover:text-[#0e7490]">AMS</button><span>›</span>
     <span class="text-gray-900 font-medium">${esc(c.name)}</span>
   </div>
   <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
     <div><h1 class="text-xl font-bold text-gray-900">${esc(c.name)}</h1>${c.description?`<p class="text-sm text-gray-400 mt-0.5">${esc(c.description)}</p>`:''}</div>
-    ${can('admin')?`<div class="flex gap-2">
-      <button data-act="edit-ams-client" data-id="${c.id}" class="text-gray-400 hover:text-[#0e7490] text-xs px-2 border border-gray-200 rounded-lg py-1.5">Edit</button>
+    ${can('admin')?`<div class="flex gap-2 flex-wrap">
+      <button data-act="edit-ams-client" data-id="${c.id}" class="text-gray-400 hover:text-[#0e7490] text-xs px-2 border border-gray-200 rounded-lg py-1.5">Edit Client</button>
       <button data-act="delete-ams-client" data-id="${c.id}" class="text-rose-400 hover:text-rose-600 text-xs px-2">Delete Client</button>
     </div>`:''}
   </div>
-  ${can('edit')?`<div class="bg-white rounded-2xl border border-gray-100 p-5 mb-6">
-    <h3 class="font-semibold text-gray-900 text-sm mb-3">Log Hours</h3>
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-      <input id="ams-date" type="date" value="${todayStr()}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
-      <select id="ams-category" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${AMS_CATEGORIES.map(cat=>`<option>${cat}</option>`).join('')}</select>
-      <input id="ams-hours" type="number" step="0.5" min="0" placeholder="Hours" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
-      <input id="ams-desc" type="text" placeholder="Description" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
-    </div>
-    <button data-act="log-ams-hours" data-cid="${c.id}" class="w-full btn-grad text-white font-semibold rounded-xl py-2.5 text-sm transition">+ Add Entry</button>
-  </div>`:''}
-  ${can('admin')?`<div class="bg-white rounded-2xl border border-gray-100 p-5 mb-6">
+  ${can('edit')?`<div class="mb-5"><button data-act="modal-open" data-modal="add-ams-entry" data-cid="${c.id}" class="btn-grad text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition">+ Add Entry</button></div>`:''}
+  ${can('admin')&&t.hasRate?`<div class="bg-white rounded-2xl border border-gray-100 p-5 mb-6">
     <h3 class="font-semibold text-gray-900 text-sm mb-3">Billing</h3>
     ${t.hasBucket?`<div class="grid grid-cols-3 gap-4 mb-4">
       <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">${t.totalAvailableHours.toFixed(1)}</div><div class="text-xs text-gray-500">Total Available</div></div>
@@ -858,55 +909,56 @@ function renderAmsClientDetail(clientId){
     <div class="flex flex-wrap items-end gap-3 mb-4">
       <div><label class="block text-xs text-gray-400 mb-1">From</label><input id="ams-from" data-act="ams-range" type="date" value="${esc(S.amsFrom)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs text-gray-400 mb-1">To</label><input id="ams-to" data-act="ams-range" type="date" value="${esc(S.amsTo)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
-      <button data-act="exp-ams-invoice" data-cid="${c.id}" class="btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">📄 Export Invoice PDF</button>
+      <button data-act="exp-ams-invoice" data-cid="${c.id}" class="btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">📄 Invoice PDF</button>
+      <button data-act="exp-ams-activity" data-cid="${c.id}" class="bg-white border border-[#0e7490] text-[#0e7490] text-sm font-medium px-4 py-2 rounded-xl hover:bg-[#0e7490]/5 transition">📋 Activity Report</button>
     </div>
     <div class="grid grid-cols-3 gap-4 mb-4">
       <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">${t.totalHours.toFixed(1)}</div><div class="text-xs text-gray-500">Hours This Period${t.hasBucket?` (${t.coveredHours.toFixed(1)} covered)`:''}</div></div>
       <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">₹${(c.manDayRate||0).toLocaleString('en-IN')}</div><div class="text-xs text-gray-500">Day Rate</div></div>
-      <div class="bg-[#0e7490]/10 rounded-xl p-4"><div class="text-2xl font-bold text-[#0e7490]">₹${t.totalAmount.toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="text-xs text-gray-500">Billable Amount</div></div>
+      <div class="bg-[#0e7490]/10 rounded-xl p-4"><div class="text-2xl font-bold text-[#0e7490]">₹${(t.totalAmount||0).toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="text-xs text-gray-500">Billable Amount</div></div>
     </div>
     <div class="flex flex-wrap gap-2">
-      ${Object.entries(t.byCategory).map(([cat,hrs])=>`<span class="text-xs bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-gray-600">${esc(cat)}: ${hrs.toFixed(1)}h</span>`).join('')||'<span class="text-xs text-gray-400">No entries in this range</span>'}
+      ${Object.entries(t.byType).map(([tp,hrs])=>`<span class="text-xs bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-gray-600">${esc(tp)}: ${hrs.toFixed(1)}h</span>`).join('')||'<span class="text-xs text-gray-400">No entries in this range</span>'}
     </div>
+  </div>`:can('admin')&&!t.hasRate?`<div class="bg-white rounded-2xl border border-gray-100 p-5 mb-6">
+    <div class="flex flex-wrap items-end gap-3 mb-4">
+      <div><label class="block text-xs text-gray-400 mb-1">From</label><input id="ams-from" data-act="ams-range" type="date" value="${esc(S.amsFrom)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs text-gray-400 mb-1">To</label><input id="ams-to" data-act="ams-range" type="date" value="${esc(S.amsTo)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <button data-act="exp-ams-activity" data-cid="${c.id}" class="btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">📋 Activity Report</button>
+    </div>
+    <div class="bg-gray-50 rounded-xl p-4 inline-block"><div class="text-2xl font-bold text-gray-700">${t.totalHours.toFixed(1)}</div><div class="text-xs text-gray-500">Total Hours (Retainer)</div></div>
   </div>`:''}
-  <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-    <table class="w-full text-sm">
+  <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden overflow-x-auto">
+    <table class="w-full text-sm min-w-[1400px]">
       <thead class="border-b border-gray-100 bg-gray-50 sticky-head"><tr>
-        ${['Date','Category','Description','Hours','Logged By',...(can('admin')?['Amount']:[]),...(can('edit')?['Actions']:[])].map(h=>`<th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}
+        ${COLS.map((h,i)=>`<th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide ${i===0?'w-8 text-center':''}">${h}</th>`).join('')}
+        ${can('edit')?`<th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>`:''}
       </tr></thead>
       <tbody class="divide-y divide-gray-50">
-        ${sorted.length?sorted.map(e=>{
-          const isEditing=S.editingAmsEntryId===e.id;
-          const hasHistory=e.edits&&e.edits.length>0;
+        ${sorted.length?sorted.map((e,idx)=>{
           const isExpanded=S.expandedAmsHistory.has(e.id);
-          if(isEditing){
-            return`<tr class="bg-gray-50/50">
-              <td class="px-4 py-3"><input id="edit-ams-date-${e.id}" type="date" value="${esc(e.date)}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-xs w-full focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></td>
-              <td class="px-4 py-3"><select id="edit-ams-cat-${e.id}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-xs w-full focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${AMS_CATEGORIES.map(cat=>`<option${cat===e.category?' selected':''}>${cat}</option>`).join('')}</select></td>
-              <td class="px-4 py-3"><input id="edit-ams-desc-${e.id}" type="text" value="${esc(e.description||'')}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-xs w-full focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></td>
-              <td class="px-4 py-3"><input id="edit-ams-hours-${e.id}" type="number" step="0.5" min="0" value="${e.hours}" class="border border-gray-200 rounded-lg px-2 py-1.5 text-xs w-20 focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></td>
-              <td class="px-4 py-3 text-gray-400 text-xs">${esc(e.loggedBy||'—')}</td>
-              ${can('admin')?`<td class="px-4 py-3"></td>`:''}
-              <td class="px-4 py-3"><div class="flex gap-1.5">
-                <button data-act="cancel-edit-ams-entry" class="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 border border-gray-200 rounded-lg transition">Cancel</button>
-                <button data-act="save-edit-ams-entry" data-cid="${c.id}" data-eid="${e.id}" class="text-xs text-white bg-[#0e7490] hover:bg-[#0d3d4f] px-2 py-1 rounded-lg transition">Save</button>
-              </div></td>
-            </tr>`;
-          }
-          return`<tr class="hover:bg-gray-50/50">
-            <td class="px-4 py-3 text-gray-600 whitespace-nowrap align-top">${fmtDate(e.date)}</td>
-            <td class="px-4 py-3 align-top"><span class="text-xs bg-gray-50 border border-gray-200 rounded-full px-2 py-0.5 text-gray-600">${esc(e.category)}</span></td>
-            <td class="px-4 py-3 text-gray-700 align-top">
+          const hasHistory=e.edits&&e.edits.length>0;
+          return`<tr class="hover:bg-gray-50/50 transition">
+            <td class="px-3 py-2 text-center text-xs text-gray-400 font-medium">${sorted.length-idx}</td>
+            <td class="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">${fmtDate(entryDate(e))}</td>
+            <td class="px-3 py-2 text-gray-700 text-xs">${esc(entryRaisedBy(e))}</td>
+            <td class="px-3 py-2 text-gray-700 text-xs">${esc(e.module||'—')}</td>
+            <td class="px-3 py-2 text-gray-700 text-xs">${esc(e.project||'—')}</td>
+            <td class="px-3 py-2 text-gray-700 text-xs max-w-[180px]">
               ${esc(e.description||'—')}
-              ${hasHistory?`<div><button data-act="toggle-ams-history" data-eid="${e.id}" class="text-[10px] text-amber-600 hover:text-amber-700 font-medium mt-1">✎ edited${e.edits.length>1?` (${e.edits.length}×)`:''} — ${isExpanded?'hide':'view'} history</button></div>`:''}
-              ${isExpanded&&hasHistory?`<div class="mt-1.5 pl-2 border-l-2 border-amber-200 space-y-1.5">${[...e.edits].reverse().map(h=>`<div class="text-[11px] text-gray-400">${fmtDate(h.editedAt)} · ${esc(h.editedBy||'')} changed it from: ${esc(h.description||'—')} (${h.category}, ${h.hours}h, ${fmtDate(h.date)})</div>`).join('')}</div>`:''}
+              ${hasHistory?`<div><button data-act="toggle-ams-history" data-eid="${e.id}" class="text-[10px] text-amber-600 hover:text-amber-700 font-medium mt-0.5">✎ edited — ${isExpanded?'hide':'view'}</button></div>`:''}
+              ${isExpanded&&hasHistory?`<div class="mt-1 pl-2 border-l-2 border-amber-200 space-y-1">${[...e.edits].reverse().map(h=>`<div class="text-[10px] text-gray-400">${fmtDate(h.editedAt)}: ${esc(h.description||'—')}</div>`).join('')}</div>`:''}
             </td>
-            <td class="px-4 py-3 text-gray-600 align-top">${Number(e.hours).toFixed(1)}</td>
-            <td class="px-4 py-3 text-gray-400 text-xs align-top">${esc(e.loggedBy||'—')}</td>
-            ${can('admin')?`<td class="px-4 py-3 text-gray-700 font-medium align-top">${t.hasBucket?'<span class="text-xs text-gray-400">pooled</span>':`₹${amsEntryAmount(Number(e.hours),c.manDayRate||0).toLocaleString('en-IN',{maximumFractionDigits:0})}`}</td>`:''}
-            ${can('edit')?`<td class="px-4 py-3 align-top"><button data-act="edit-ams-entry" data-eid="${e.id}" class="text-xs text-gray-300 hover:text-[#0e7490]">Edit</button></td>`:''}
+            <td class="px-3 py-2 text-xs"><span class="bg-gray-50 border border-gray-200 rounded-full px-2 py-0.5 text-gray-600">${esc(entryType(e))}</span></td>
+            <td class="px-3 py-2 text-xs text-gray-600">${esc(e.queryLevel||'—')}</td>
+            <td class="px-3 py-2 text-xs text-gray-600 max-w-[120px]">${esc(e.dependencies||'—')}</td>
+            <td class="px-3 py-2">${amsStatusBadge(e.entryStatus||'Open')}</td>
+            <td class="px-3 py-2 text-xs text-gray-600 max-w-[160px]">${esc(e.solution||'—')}</td>
+            <td class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">${esc(e.modeOfSupport||'—')}</td>
+            <td class="px-3 py-2 text-gray-700 font-medium text-xs text-right">${Number(e.hours||0).toFixed(1)}</td>
+            ${can('edit')?`<td class="px-3 py-2"><div class="flex gap-2"><button data-act="edit-ams-entry" data-cid="${c.id}" data-eid="${e.id}" class="text-xs text-gray-300 hover:text-[#0e7490]">Edit</button>${can('admin')?`<button data-act="delete-ams-entry" data-cid="${c.id}" data-eid="${e.id}" class="text-xs text-gray-300 hover:text-rose-500">Delete</button>`:''}</div></td>`:''}
           </tr>`;
-        }).join(''):`<tr><td colspan="${5+(can('admin')?1:0)+(can('edit')?1:0)}" class="text-center py-12 text-gray-400 text-sm">No hours logged yet</td></tr>`}
+        }).join(''):`<tr><td colspan="${COLS.length+(can('edit')?1:0)}" class="text-center py-12 text-gray-400 text-sm">${emptyIcon('hours')}No entries yet. Add one to get started.</td></tr>`}
       </tbody>
     </table>
   </div>
@@ -1049,6 +1101,7 @@ function renderIntegDetail(clientId,integId){
             <div class="text-xs font-semibold text-[#0e7490] mb-1">${esc(t.date)} · ${esc(t.addedBy||'')}</div>
             <div class="flex items-center gap-2 shrink-0">
               ${can('edit')?`<button data-act="edit-timeline" data-tid="${t.id}" class="text-[10px] text-gray-300 hover:text-[#0e7490]">Edit</button>`:''}
+              ${can('admin')?`<button data-act="delete-timeline-entry" data-cid="${c.id}" data-iid="${i.id}" data-tid="${t.id}" class="text-[10px] text-gray-300 hover:text-rose-500">Delete</button>`:''}
               <button data-act="copy-update" data-text="${esc(t.update)}" class="text-[10px] text-gray-300 hover:text-[#0e7490]">Copy</button>
             </div>
           </div>
@@ -1080,23 +1133,23 @@ function renderAdmin(){
 }
 
 function renderAdminImpl(){
-  const implClients=S.clients.filter(c=>c.projects!==undefined);
+  const implClients=S.clients.filter(c=>c.modules!==undefined);
   return`<div>
   <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-impl-client" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Client</button></div>
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <table class="w-full text-sm">
       <thead class="border-b border-gray-100 bg-gray-50 sticky-head"><tr>
-        ${['Client','Projects','At Risk Modules','Actions'].map(h=>`<th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}
+        ${['Client','Modules','At Risk Phases','Actions'].map(h=>`<th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}
       </tr></thead>
       <tbody class="divide-y divide-gray-50">
         ${implClients.length?implClients.map(c=>{
-          const risk=(c.projects||[]).reduce((a,p)=>a+implProgress(p).atRisk,0);
+          const pr=implProgress(c);
           return`<tr class="hover:bg-gray-50/50 transition">
           <td class="px-4 py-3"><div class="font-medium text-gray-900" title="${esc(c.name)}">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 truncate max-w-[180px]" title="${esc(c.description)}">${esc(c.description)}</div>`:''}</td>
-          <td class="px-4 py-3 font-semibold text-gray-700">${(c.projects||[]).length}</td>
-          <td class="px-4 py-3">${risk>0?`<span class="text-rose-600 font-semibold">${risk}</span>`:`<span class="text-gray-400">0</span>`}</td>
+          <td class="px-4 py-3 font-semibold text-gray-700">${(c.modules||[]).length}</td>
+          <td class="px-4 py-3">${pr.atRisk>0?`<span class="text-rose-600 font-semibold">${pr.atRisk}</span>`:`<span class="text-gray-400">0</span>`}</td>
           <td class="px-4 py-3"><div class="flex gap-2">
-            <button data-act="modal-open" data-modal="add-impl-project" data-cid="${c.id}" class="text-xs text-[#0e7490] hover:text-[#0d3d4f] font-medium">+ Project</button>
+            <button data-act="modal-open" data-modal="add-impl-module" data-cid="${c.id}" class="text-xs text-[#0e7490] hover:text-[#0d3d4f] font-medium">+ Module</button>
             <button data-act="delete-impl-client" data-id="${c.id}" class="text-xs text-rose-400 hover:text-rose-600 font-medium">Remove from Implementations</button>
           </div></td>
         </tr>`;}).join(''):`<tr><td colspan="4" class="text-center py-8 text-gray-400 text-sm">No implementation clients yet</td></tr>`}
@@ -1107,7 +1160,7 @@ function renderAdminImpl(){
 }
 
 function renderAdminAms(){
-  const amsClients=S.clients.filter(c=>c.manDayRate!==undefined);
+  const amsClients=S.clients.filter(c=>c.workLog!==undefined);
   return`<div>
   <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-ams-client" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Client</button></div>
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -1120,7 +1173,7 @@ function renderAdminAms(){
           const t=amsTotals(c,'','');
           return`<tr class="hover:bg-gray-50/50 transition">
           <td class="px-4 py-3"><div class="font-medium text-gray-900" title="${esc(c.name)}">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 truncate max-w-[180px]" title="${esc(c.description)}">${esc(c.description)}</div>`:''}</td>
-          <td class="px-4 py-3 font-semibold text-gray-700">₹${(c.manDayRate||0).toLocaleString('en-IN')}</td>
+          <td class="px-4 py-3 font-semibold text-gray-700">${c.manDayRate?`₹${c.manDayRate.toLocaleString('en-IN')}`:'Retainer (no rate)'}</td>
           <td class="px-4 py-3 text-gray-600">${t.totalHours.toFixed(1)}</td>
           <td class="px-4 py-3"><button data-act="delete-ams-client" data-id="${c.id}" class="text-xs text-rose-400 hover:text-rose-600 font-medium">Remove from AMS</button></td>
         </tr>`;}).join(''):`<tr><td colspan="4" class="text-center py-8 text-gray-400 text-sm">No AMS clients yet</td></tr>`}
@@ -1217,44 +1270,59 @@ function renderModal(){
   } else if(m.type==='add-impl-client'){
     title='Add Client to Implementations';
     body=`<div class="space-y-3">
-      ${clientPickerHtml(c=>c.projects!==undefined)}
+      ${clientPickerHtml(c=>c.modules!==undefined)}
       <p class="text-xs text-gray-400 text-center">— or create a new client —</p>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">New Client Name</label><input id="m1" type="text" placeholder="e.g. HDFC Bank" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m2" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none"></textarea></div>
-    </div>`;
-  } else if(m.type==='add-impl-project'){
-    title='Add Project';
-    body=`<div class="space-y-3">
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Project Name *</label><input id="m1" type="text" placeholder="e.g. Darwinbox Core Implementation" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Project Lead</label><input id="m2" type="text" placeholder="Name" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Target Go-Live</label><input id="m3" type="date" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
     </div>`;
   } else if(m.type==='add-impl-module'){
     title='Add Module';
     body=`<div class="space-y-3">
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Module Name *</label><input id="m1" type="text" placeholder="e.g. Core HR, Payroll, Leave & Attendance" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
-      <p class="text-xs text-gray-400">Every phase (${PHASES.join(', ')}) will start as "Not Started" for this module.</p>
+      <p class="text-xs text-gray-400">All ${PHASES.length} phases (BPU through Hypercare) will start as "Not Started" for this module.</p>
     </div>`;
   } else if(m.type==='add-ams-client'){
     title='Add Client to AMS';
     body=`<div class="space-y-3">
-      ${clientPickerHtml(c=>c.manDayRate!==undefined)}
+      ${clientPickerHtml(c=>c.workLog!==undefined)}
       <p class="text-xs text-gray-400 text-center">— or create a new client —</p>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">New Client Name</label><input id="m1" type="text" placeholder="e.g. HDFC Bank" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m2" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none"></textarea></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Man-Day Rate (₹) *</label><input id="m3" type="number" min="0" placeholder="e.g. 15000" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
-      <p class="text-xs text-gray-400 mt-1">Required either way — applies to the selected client above too.</p></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours (optional)</label><input id="m4" type="number" min="0" step="0.5" placeholder="Leave blank for pure pay-per-hour" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
-      <p class="text-xs text-gray-400 mt-1">If set, logged hours are deducted from this pool first — only hours beyond it get billed.</p></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Man-Day Rate (₹) <span class="text-gray-400 font-normal">optional — leave blank for retainer/hours-only</span></label><input id="m3" type="number" min="0" placeholder="e.g. 15000" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours <span class="text-gray-400 font-normal">optional</span></label><input id="m4" type="number" min="0" step="0.5" placeholder="Leave blank if not applicable" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+      <p class="text-xs text-gray-400 mt-1">If set, hours are deducted from this pool first — only overages get billed.</p></div>
     </div>`;
   } else if(m.type==='edit-ams-client'){
     title='Edit AMS Client';
     body=`<div class="space-y-3">
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m1" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(m.description||'')}</textarea></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Man-Day Rate (₹) *</label><input id="m2" type="number" min="0" value="${m.manDayRate||''}" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours (optional)</label><input id="m3" type="number" min="0" step="0.5" value="${m.totalAvailableHours??''}" placeholder="Leave blank for pure pay-per-hour" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Man-Day Rate (₹) <span class="text-gray-400 font-normal">optional</span></label><input id="m2" type="number" min="0" value="${m.manDayRate||''}" placeholder="Leave blank for retainer/hours-only" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours <span class="text-gray-400 font-normal">optional</span></label><input id="m3" type="number" min="0" step="0.5" value="${m.totalAvailableHours??''}" placeholder="Leave blank if not applicable" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
     </div>`;
     btnLabel='Save';
+  } else if(m.type==='add-ams-entry'||m.type==='edit-ams-entry'){
+    const isEdit=m.type==='edit-ams-entry';
+    title=isEdit?'Edit Entry':'Add AMS Entry';btnLabel=isEdit?'Save Changes':'Add Entry';
+    const fg=(id,label,el,hint='')=>`<div><label class="block text-xs font-medium text-gray-500 mb-1">${label}${hint?`<span class="text-gray-400 font-normal ml-1">${hint}</span>`:''}</label>${el}</div>`;
+    const inp=(id,type,val='',ph='',extra='')=>`<input id="${id}" type="${type}" value="${esc(val)}" placeholder="${ph}" ${extra} class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`;
+    const sel=(id,opts,cur='')=>`<select id="${id}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${opts.map(o=>`<option${o===cur?' selected':''}>${o}</option>`).join('')}</select>`;
+    const ta=(id,val='',ph='',rows=2)=>`<textarea id="${id}" rows="${rows}" placeholder="${ph}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(val)}</textarea>`;
+    body=`<div class="grid grid-cols-2 gap-3">
+      ${fg('ae-date','Date Raised',inp('ae-date','date',m.dateRaised||todayStr()))}
+      ${fg('ae-raised','Raised / Attended By',inp('ae-raised','text',m.raisedBy||S.user?.name||'','Name'))}
+      ${fg('ae-module','Module / Meeting',inp('ae-module','text',m.module||'','e.g. Payroll, UAT Meeting'))}
+      ${fg('ae-project','Project',inp('ae-project','text',m.project||'','Project name'))}
+      ${fg('ae-type','Type',sel('ae-type',AMS_TYPES,m.type||AMS_TYPES[0]))}
+      ${fg('ae-level','Query Level',sel('ae-level',AMS_QUERY_LEVELS,m.queryLevel||AMS_QUERY_LEVELS[0]))}
+      ${fg('ae-mode','Mode of Support',sel('ae-mode',AMS_MODES,m.modeOfSupport||AMS_MODES[0]))}
+      ${fg('ae-status','Status',sel('ae-status',AMS_ENTRY_STATUSES,m.entryStatus||'Open'))}
+      ${fg('ae-hours','Hours Consumed',inp('ae-hours','number',m.hours||'','e.g. 1.5','step="0.5" min="0"'))}
+      ${fg('ae-deps','Any Dependencies',inp('ae-deps','text',m.dependencies||'','Dependencies or blockers'),'optional')}
+    </div>
+    <div class="mt-3 space-y-3">
+      ${fg('ae-desc','Description',ta('ae-desc',m.description||'','What was the issue, query or activity?',2))}
+      ${fg('ae-solution','Solution Discussed',ta('ae-solution',m.solution||'','Summary of resolution or discussion',2),'optional')}
+    </div>`;
   } else if(m.type==='confirm'){
     title='Confirm';btnLabel='Delete';btnCls='bg-rose-600 hover:bg-rose-700';
     body=`<p class="text-sm text-gray-600">${esc(m.msg||'Are you sure? This cannot be undone.')}</p>`;
@@ -1262,7 +1330,7 @@ function renderModal(){
   const busy=!!m.busy;
   const busyLabel=m.type==='confirm'?'Deleting…':'Saving…';
   return`<div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 fade" id="modal-overlay">
-  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 modal-pop">
+  <div class="${m.type==='add-ams-entry'||m.type==='edit-ams-entry'?'max-w-2xl':'max-w-md'} bg-white rounded-2xl shadow-2xl w-full p-6 modal-pop overflow-y-auto max-h-[90vh]">
     <div class="flex items-center justify-between mb-5">
       <h2 class="font-bold text-gray-900">${esc(title)}</h2>
       <button data-act="modal-close" ${busy?'disabled class="text-gray-200 text-xl leading-none cursor-not-allowed"':'class="text-gray-400 hover:text-gray-600 text-xl leading-none"'}>✕</button>
@@ -1465,51 +1533,231 @@ function exportPdf(clientId){
 }
 
 // ─── EXPORT: Implementation Module Progress (PDF) ──────────────────
-function exportImplPdf(clientId,projectId){
-  const c=S.clients.find(x=>x.id===clientId);const p=c?.projects?.find(x=>x.id===projectId);if(!c||!p)return;
+function exportImplPdf(clientId){
+  const c=S.clients.find(x=>x.id===clientId);if(!c)return;
   showToast('Generating PDF…','info');
   try{
     const{jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape',format:'a4',unit:'mm'});
-    const W=297,NV=[13,61,79];
-    const drawHeaderBar=()=>{
-      doc.setFillColor(...NV);doc.rect(0,0,W,14,'F');
-      doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text('Module Progress Matrix',10,9.5);
-      doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(`${c.name} · ${p.name}`,W-10,9.5,{align:'right'});
-    };
-    drawHeaderBar();
-    const body=(p.modules||[]).map(m=>{
+    const W=297,H=210,NV=[13,61,79],MG=[181,23,158];
+    const mods=c.modules||[];
+
+    // ── COVER ──────────────────────────────────────────────────────
+    doc.setFillColor(...NV);doc.rect(0,0,W,H,'F');
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(125,211,232);doc.text('IMPLEMENTATION STATUS REPORT',W/2,58,{align:'center'});
+    doc.setFont('helvetica','bold');doc.setFontSize(34);doc.setTextColor(255,255,255);doc.text(c.name,W/2,80,{align:'center'});
+    doc.setFont('helvetica','normal');doc.setFontSize(14);doc.setTextColor(125,211,232);doc.text('Prepared by Kognoz',W/2,95,{align:'center'});
+    doc.setFillColor(...MG);doc.rect(W/2-12,100,24,1,'F');
+    doc.setFontSize(10);doc.setTextColor(100,116,139);doc.text(new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}),W/2,H-8,{align:'center'});
+
+    // ── SUMMARY PAGE ───────────────────────────────────────────────
+    doc.addPage();doc.setFillColor(...NV);doc.rect(0,0,W,14,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text('Implementation Summary',10,9.5);
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(c.name,W-10,9.5,{align:'right'});
+    // Stat boxes — total phases across all modules broken down by status
+    const allPhases=mods.flatMap(m=>m.phases||[]);
+    const sg={};allPhases.forEach(ph=>sg[ph.status]=(sg[ph.status]||0)+1);
+    const totalPhases=allPhases.length;
+    [{l:'Modules',v:mods.length,rgb:NV},{l:'Total Phases',v:totalPhases,rgb:[100,116,139]},{l:'In Progress',v:sg['In Progress']||0,rgb:SRGB['In Progress']},{l:'At Risk',v:sg['At Risk']||0,rgb:SRGB['At Risk']},{l:'Completed',v:sg['Completed']||0,rgb:SRGB['Completed']}]
+    .forEach(({l,v,rgb},i)=>{const x=10+i*57;doc.setFillColor(...rgb);doc.roundedRect(x,18,50,20,2,2,'F');doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(255,255,255);doc.text(String(v),x+25,30,{align:'center'});doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.text(l,x+25,37,{align:'center'});});
+    // Matrix table (condensed — one row per module, columns = phases)
+    const matrixBody=mods.map(m=>{
       const row=[m.name];
       PHASES.forEach(phName=>{
         const ph=(m.phases||[]).find(x=>x.name===phName)||{status:'Not Started'};
-        row.push(ph.status+(ph.targetDate?`\n${fmtDate(ph.targetDate)}`:''));
+        const cell=ph.status+(ph.targetDate?`\n${fmtDate(ph.targetDate)}`:'')+(ph.assignee?`\n${ph.assignee}`:'');
+        row.push(cell);
       });
       return row;
     });
     doc.autoTable({
-      startY:18,
-      margin:{top:18,left:10,right:10,bottom:10},
+      startY:42,
+      margin:{top:16,left:10,right:10,bottom:10},
       head:[['Module',...PHASES]],
-      body,
-      headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:8.5},
-      styles:{fontSize:8,cellPadding:3,valign:'middle',halign:'center'},
-      columnStyles:{0:{halign:'left',fontStyle:'bold',cellWidth:45}},
+      body:matrixBody,
+      headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:7.5},
+      styles:{fontSize:7,cellPadding:2.5,valign:'middle',halign:'center'},
+      columnStyles:{0:{halign:'left',fontStyle:'bold',cellWidth:38}},
       alternateRowStyles:{fillColor:[245,249,250]},
       didParseCell:d=>{
         if(d.section!=='body'||d.column.index===0)return;
-        const statusTxt=String(d.cell.raw).split('\n')[0];
-        const rgb=SRGB[statusTxt];
-        if(rgb){d.cell.styles.textColor=rgb;d.cell.styles.fontStyle='bold';}
+        const st=String(d.cell.raw).split('\n')[0];
+        const rgb=SRGB[st];if(rgb){d.cell.styles.textColor=rgb;d.cell.styles.fontStyle='bold';}
       },
-      didDrawPage:drawHeaderBar,
+      didDrawPage:()=>{doc.setFillColor(...NV);doc.rect(0,0,W,14,'F');doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text('Implementation Summary',10,9.5);doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(c.name,W-10,9.5,{align:'right'});}
     });
-    doc.save(`${c.name}_${p.name}_Implementation_Report.pdf`);showToast('PDF downloaded ✓');
+
+    // ── DETAIL PAGES (one row per phase, grouped under module) ─────
+    doc.addPage();
+    const detailRows=[];
+    mods.forEach(m=>{
+      // Module header row
+      detailRows.push({isHeader:true,moduleName:m.name,row:['',m.name,'','','',''],status:null});
+      PHASES.forEach(phName=>{
+        const ph=(m.phases||[]).find(x=>x.name===phName)||{name:phName,status:'Not Started',startDate:'',targetDate:'',updates:[]};
+        const latest=(ph.updates||[])[0];
+        const updateText=latest?latest.update:'No updates yet.';
+        const updateDate=latest?fmtDate(latest.date):'';
+        const updateCount=(ph.updates||[]).length;
+        const nextText=ph.nextAction||'';
+        const actText=ph.currentActivity||'';
+        const sizingStr=`Update:${updateDate?` (${updateDate})`:''}\n${updateText}\n\nNext:\n${nextText||'No next action noted.'}`;
+        detailRows.push({
+          isHeader:false,moduleName:m.name,phaseName:phName,
+          status:ph.status,updateText,updateDate,updateCount,nextText,actText,
+          assignee:ph.assignee||'',
+          startDate:ph.startDate?fmtDate(ph.startDate):'-',
+          targetDate:ph.targetDate?fmtDate(ph.targetDate):'-',
+          row:['',phName,ph.status,ph.startDate?fmtDate(ph.startDate):'-',ph.targetDate?fmtDate(ph.targetDate):'-',sizingStr],
+        });
+      });
+    });
+    doc.autoTable({
+      startY:16,
+      margin:{top:16,left:10,right:10,bottom:10},
+      head:[['','Phase','Status','Start Date','Target Date','Latest Update & Next Action']],
+      body:detailRows.map(d=>d.row),
+      headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:9},
+      styles:{fontSize:8,cellPadding:3,valign:'top'},
+      alternateRowStyles:{fillColor:[245,249,250]},
+      columnStyles:{0:{cellWidth:3},1:{cellWidth:68},2:{cellWidth:30},3:{cellWidth:30},4:{cellWidth:30},5:{cellWidth:'auto'}},
+      didParseCell:d=>{
+        if(d.section!=='body')return;
+        const meta=detailRows[d.row.index];if(!meta)return;
+        if(meta.isHeader){
+          // Module header rows span visually — teal background across all cols
+          d.cell.styles.fillColor=NV;d.cell.styles.textColor=[255,255,255];d.cell.styles.fontStyle='bold';d.cell.styles.fontSize=9;
+          if(d.column.index===0)d.cell.text=[''];
+          if(d.column.index!==1)d.cell.text=[''];
+          return;
+        }
+        if(d.column.index===0){d.cell.styles.fillColor=SRGB[meta.status]||[100,116,139];d.cell.text=[''];}
+        if(d.column.index===2){const rgb=SRGB[meta.status];if(rgb){d.cell.styles.textColor=rgb;d.cell.styles.fontStyle='bold';}}
+      },
+      didDrawCell:d=>{
+        if(d.section!=='body'||d.column.index!==5)return;
+        const meta=detailRows[d.row.index];if(!meta||meta.isHeader)return;
+        const bg=d.row.index%2?[255,255,255]:[245,249,250];
+        doc.setFillColor(...bg);doc.rect(d.cell.x,d.cell.y,d.cell.width,d.cell.height,'F');
+        const x=d.cell.x+3,maxW=d.cell.width-6;let y=d.cell.y+4;const lh=3.3;
+        doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(31,41,55);
+        doc.text('Update:'+(meta.updateDate?` (${meta.updateDate})`:''),x,y);y+=lh;
+        doc.setFont('helvetica','normal');doc.setTextColor(75,85,99);
+        const updLines=doc.splitTextToSize(meta.updateText,maxW);
+        doc.text(updLines,x,y);y+=updLines.length*lh;
+        y+=lh;
+        doc.setFont('helvetica','bold');doc.setTextColor(31,41,55);
+        doc.text('Next:',x,y);y+=lh;
+        if(meta.nextText){
+          doc.setFont('helvetica','normal');doc.setTextColor(75,85,99);
+          doc.text(doc.splitTextToSize(meta.nextText,maxW),x,y);
+        }else{
+          doc.setFont('helvetica','italic');doc.setTextColor(156,163,175);
+          doc.text('No next action noted.',x,y);
+        }
+      },
+      didDrawPage:()=>{
+        doc.setFillColor(...NV);doc.rect(0,0,W,14,'F');
+        doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text('Phase Details & Updates',10,9.5);
+        doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(c.name,W-10,9.5,{align:'right'});
+      },
+    });
+
+    // ── THANK YOU ──────────────────────────────────────────────────
+    doc.addPage();doc.setFillColor(...NV);doc.rect(0,0,W,H,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(36);doc.setTextColor(255,255,255);doc.text('Thank You',W/2,H/2-8,{align:'center'});
+    doc.setFillColor(...MG);doc.rect(W/2-10,H/2,20,1,'F');
+    doc.setFont('helvetica','normal');doc.setFontSize(13);doc.setTextColor(125,211,232);doc.text('Kognoz · HR Transformation & Consulting',W/2,H/2+10,{align:'center'});
+
+    doc.save(`${c.name}_Implementation_Report.pdf`);showToast('PDF downloaded ✓');
   }catch(e){console.error(e);showToast('PDF failed: '+e.message,'error');}
 }
 
 // ─── EXPORT: AMS Billing Breakdown (PDF, admin only) ────────────────
+function exportAmsActivityPdf(clientId){
+  if(!can('admin'))return;
+  const c=S.clients.find(x=>x.id===clientId);if(!c)return;
+  showToast('Generating activity report…','info');
+  try{
+    const{jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape',format:'a4',unit:'mm'});
+    const W=297,H=210,NV=[13,61,79],MG=[181,23,158];
+    const t=amsTotals(c,S.amsFrom,S.amsTo);
+    const sorted=[...t.log].sort((a,b)=>entryDate(a).localeCompare(entryDate(b)));
+    const periodLabel=(S.amsFrom||S.amsTo)?`${S.amsFrom?fmtDate(S.amsFrom):'Start'} - ${S.amsTo?fmtDate(S.amsTo):'Today'}`:'All Time';
+
+    // ── COVER ──────────────────────────────────────────────────────
+    doc.setFillColor(...NV);doc.rect(0,0,W,H,'F');
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(125,211,232);doc.text('AMS ACTIVITY REPORT',W/2,58,{align:'center'});
+    doc.setFont('helvetica','bold');doc.setFontSize(34);doc.setTextColor(255,255,255);doc.text(c.name,W/2,80,{align:'center'});
+    doc.setFont('helvetica','normal');doc.setFontSize(14);doc.setTextColor(125,211,232);doc.text(`Period: ${periodLabel}`,W/2,95,{align:'center'});
+    doc.setFillColor(...MG);doc.rect(W/2-12,100,24,1,'F');
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(100,116,139);
+    doc.text('Prepared by Kognoz',W/2,H-12,{align:'center'});
+    doc.text(new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}),W/2,H-7,{align:'center'});
+
+    // ── SUMMARY PAGE ───────────────────────────────────────────────
+    doc.addPage();
+    const drawHdr=()=>{doc.setFillColor(...NV);doc.rect(0,0,W,14,'F');doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text('AMS Activity Log',10,9.5);doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(c.name,W-10,9.5,{align:'right'});};
+    drawHdr();
+    // Stat boxes
+    const openCount=sorted.filter(e=>(e.entryStatus||'Open')==='Open').length;
+    const inprogCount=sorted.filter(e=>e.entryStatus==='In Progress').length;
+    const closedCount=sorted.filter(e=>e.entryStatus==='Closed').length;
+    [{l:'Total Entries',v:sorted.length,rgb:NV},{l:'Total Hours',v:t.totalHours.toFixed(1),rgb:[100,116,139]},{l:'Open',v:openCount,rgb:[29,78,216]},{l:'In Progress',v:inprogCount,rgb:[146,64,14]},{l:'Closed',v:closedCount,rgb:[21,128,61]}]
+    .forEach(({l,v,rgb},i)=>{const x=10+i*57;doc.setFillColor(...rgb);doc.roundedRect(x,18,50,20,2,2,'F');doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(255,255,255);doc.text(String(v),x+25,30,{align:'center'});doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.text(l,x+25,37,{align:'center'});});
+
+    // Activity table
+    const HEADS=['#','Date Raised','Raised By','Module','Project','Description','Type','Level','Dependencies','Status','Solution','Mode','Hrs'];
+    const body=sorted.map((e,i)=>[
+      String(i+1),
+      fmtDate(entryDate(e)),
+      entryRaisedBy(e),
+      e.module||'-',
+      e.project||'-',
+      e.description||'-',
+      entryType(e),
+      e.queryLevel||'-',
+      e.dependencies||'-',
+      e.entryStatus||'Open',
+      e.solution||'-',
+      e.modeOfSupport||'-',
+      Number(e.hours||0).toFixed(1),
+    ]);
+    const statusColors={'Open':[29,78,216],'In Progress':[146,64,14],'Closed':[21,128,61]};
+    doc.autoTable({
+      startY:42,
+      margin:{top:18,left:8,right:8,bottom:10},
+      head:[HEADS],
+      body,
+      headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:7.5},
+      styles:{fontSize:7,cellPadding:2,valign:'top',overflow:'linebreak'},
+      columnStyles:{
+        0:{cellWidth:8,halign:'center'},1:{cellWidth:22},2:{cellWidth:24},3:{cellWidth:24},4:{cellWidth:22},
+        5:{cellWidth:'auto'},6:{cellWidth:20},7:{cellWidth:18},8:{cellWidth:22},9:{cellWidth:20},
+        10:{cellWidth:'auto'},11:{cellWidth:20},12:{cellWidth:12,halign:'right'},
+      },
+      alternateRowStyles:{fillColor:[245,249,250]},
+      didParseCell:d=>{
+        if(d.section!=='body'||d.column.index!==9)return;
+        const rgb=statusColors[String(d.cell.raw)];
+        if(rgb){d.cell.styles.textColor=rgb;d.cell.styles.fontStyle='bold';}
+      },
+      didDrawPage:drawHdr,
+    });
+
+    // ── THANK YOU ──────────────────────────────────────────────────
+    doc.addPage();doc.setFillColor(...NV);doc.rect(0,0,W,H,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(36);doc.setTextColor(255,255,255);doc.text('Thank You',W/2,H/2-8,{align:'center'});
+    doc.setFillColor(...MG);doc.rect(W/2-10,H/2,20,1,'F');
+    doc.setFont('helvetica','normal');doc.setFontSize(13);doc.setTextColor(125,211,232);doc.text('Kognoz · HR Transformation & Consulting',W/2,H/2+10,{align:'center'});
+
+    doc.save(`${c.name}_AMS_Activity_Report.pdf`);showToast('Activity report downloaded ✓');
+  }catch(e){console.error(e);showToast('PDF failed: '+e.message,'error');}
+}
+
 function exportAmsInvoicePdf(clientId){
   if(!can('admin'))return;
   const c=S.clients.find(x=>x.id===clientId);if(!c)return;
+  if(!c.manDayRate){showToast('Invoice not available — no day rate set for this client. Use Activity Report instead.','warn');return;}
   showToast('Generating invoice…','info');
   try{
     const{jsPDF}=window.jspdf;const doc=new jsPDF({orientation:'landscape',format:'a4',unit:'mm'});
@@ -1547,7 +1795,7 @@ function exportAmsInvoicePdf(clientId){
       columnStyles:{0:{cellWidth:28},1:{cellWidth:35},2:{cellWidth:'auto'},3:{cellWidth:22,halign:'right'},4:{cellWidth:30,halign:'right'}},
       didDrawPage:drawHeaderBar,
     });
-    const catRows=Object.entries(t.byCategory).map(([cat,hrs])=>[cat,hrs.toFixed(1),t.hasBucket?'Pooled':amsEntryAmount(hrs,c.manDayRate||0).toLocaleString('en-IN',{maximumFractionDigits:0})]);
+    const catRows=Object.entries(t.byType).map(([cat,hrs])=>[cat,hrs.toFixed(1),t.hasBucket?'Pooled':(amsEntryAmount(hrs,c.manDayRate||0)||0).toLocaleString('en-IN',{maximumFractionDigits:0})]);
     if(catRows.length){
       doc.autoTable({
         startY:doc.lastAutoTable.finalY+8,
@@ -1611,22 +1859,21 @@ document.addEventListener('click',async e=>{
   if(act==='open-client'){navigate('client-detail',{clientId:el.dataset.id});return;}
   if(act==='open-integ'){navigate('integ-detail',{clientId:el.dataset.cid,integId:el.dataset.iid});return;}
   if(act==='open-impl-client'){navigate('impl-client-detail',{clientId:el.dataset.id});return;}
-  if(act==='open-impl-project'){navigate('impl-project-detail',{clientId:el.dataset.cid,projectId:el.dataset.pid});return;}
   if(act==='open-ams-client'){navigate('ams-client-detail',{clientId:el.dataset.id});return;}
   if(act==='filter'){S.filter=el.dataset.filter;render();return;}
   if(act==='sort'){const k=el.dataset.key;if(S.sort.key===k){S.sort.dir=S.sort.dir==='asc'?'desc':'asc';}else{S.sort={key:k,dir:'asc'};}render();return;}
   if(act==='admin-tab'){S.adminTab=el.dataset.tab;render();return;}
   if(act==='exp-pptx'){setBtnBusy(el,'Generating…');try{await exportPptx(el.dataset.id);}finally{clearBtnBusy(el);}return;}
   if(act==='exp-pdf'){setBtnBusy(el,'Generating…');try{await exportPdf(el.dataset.id);}finally{clearBtnBusy(el);}return;}
-  if(act==='exp-impl-pdf'){setBtnBusy(el,'Generating…');try{exportImplPdf(el.dataset.cid,el.dataset.pid);}finally{clearBtnBusy(el);}return;}
+  if(act==='exp-impl-pdf'){setBtnBusy(el,'Generating…');try{exportImplPdf(el.dataset.cid);}finally{clearBtnBusy(el);}return;}
   if(act==='exp-ams-invoice'){if(!can('admin'))return;setBtnBusy(el,'Generating…');try{exportAmsInvoicePdf(el.dataset.cid);}finally{clearBtnBusy(el);}return;}
   if(act==='copy-update'){try{await navigator.clipboard.writeText(el.dataset.text);showToast('Copied ✓');}catch(e){showToast('Copy failed','error');}return;}
   if(act==='edit-timeline'){if(!can('edit'))return;S.editingTimelineId=el.dataset.tid;render();setTimeout(()=>{const ta=document.getElementById(`edit-tl-${el.dataset.tid}`);if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}},50);return;}
   if(act==='cancel-edit-timeline'){S.editingTimelineId=null;render();return;}
   if(act==='toggle-history'){const tid=el.dataset.tid;if(S.expandedHistory.has(tid))S.expandedHistory.delete(tid);else S.expandedHistory.add(tid);render();return;}
-  if(act==='modal-open'){S.modal={type:el.dataset.modal,cid:el.dataset.cid,pid:el.dataset.pid};render();setTimeout(()=>document.getElementById('m1')?.focus(),50);return;}
+  if(act==='modal-open'){S.modal={type:el.dataset.modal,cid:el.dataset.cid};render();setTimeout(()=>document.getElementById('m1')?.focus(),50);return;}
   if(act==='open-impl-phase'){
-    navigate('impl-phase-detail',{clientId:el.dataset.cid,projectId:el.dataset.pid,moduleId:el.dataset.mid,phase:el.dataset.phase});return;
+    navigate('impl-phase-detail',{clientId:el.dataset.cid,moduleId:el.dataset.mid,phase:el.dataset.phase});return;
   }
   if(act==='modal-close'){if(S.modal?.busy)return;S.modal=null;render();return;}
 
@@ -1688,38 +1935,41 @@ document.addEventListener('click',async e=>{
   }
   if(act==='save-impl-phase'){
     if(!can('edit'))return;
-    const cid=el.dataset.cid,pid=el.dataset.pid,mid=el.dataset.mid,phaseName=el.dataset.phase;
-    const c=S.clients.find(x=>x.id===cid);const p=c?.projects?.find(x=>x.id===pid);const mod=p?.modules?.find(x=>x.id===mid);if(!mod)return;
+    const cid=el.dataset.cid,mid=el.dataset.mid,phaseName=el.dataset.phase;
+    const c=S.clients.find(x=>x.id===cid);const mod=(c?.modules||[]).find(x=>x.id===mid);if(!mod)return;
     const idx=mod.phases.findIndex(x=>x.name===phaseName);
     const ph=idx>=0?mod.phases[idx]:{name:phaseName,status:'Not Started',startDate:'',targetDate:'',updates:[]};
     const prev={...ph};
     ph.status=document.getElementById('ip-status')?.value||ph.status;
+    ph.assignee=document.getElementById('ip-assignee')?.value?.trim()||'';
     ph.startDate=document.getElementById('ip-start')?.value||'';
     ph.targetDate=document.getElementById('ip-target')?.value||'';
+    ph.currentActivity=document.getElementById('ip-activity')?.value?.trim()||'';
+    ph.nextAction=document.getElementById('ip-next')?.value?.trim()||'';
     if(idx>=0)mod.phases[idx]=ph;else mod.phases.push(ph);
     setBtnBusy(el,'Saving…');
-    try{await saveClients(`Update ${phaseName}: ${mod.name}`);showToast('Saved ✓');navigate('impl-phase-detail',{clientId:cid,projectId:pid,moduleId:mid,phase:phaseName});}
+    try{await saveClients(`Update ${phaseName}: ${mod.name}`);showToast('Saved ✓');navigate('impl-phase-detail',{clientId:cid,moduleId:mid,phase:phaseName});}
     catch(err){if(idx>=0)mod.phases[idx]=prev;else mod.phases.pop();showToast('Save failed: '+err.message,'error');clearBtnBusy(el);}
     return;
   }
   if(act==='add-impl-update'){
     if(!can('edit'))return;
-    const cid=el.dataset.cid,pid=el.dataset.pid,mid=el.dataset.mid,phaseName=el.dataset.phase;
+    const cid=el.dataset.cid,mid=el.dataset.mid,phaseName=el.dataset.phase;
     const text=document.getElementById('ip-update-input')?.value.trim();
     if(!text){showToast('Enter an update','error');return;}
-    const c=S.clients.find(x=>x.id===cid);const p=c?.projects?.find(x=>x.id===pid);const mod=p?.modules?.find(x=>x.id===mid);if(!mod)return;
+    const c=S.clients.find(x=>x.id===cid);const mod=(c?.modules||[]).find(x=>x.id===mid);if(!mod)return;
     const ph=mod.phases.find(x=>x.name===phaseName);if(!ph)return;
     if(!ph.updates)ph.updates=[];
     const entry={id:uid(),date:todayStr(),update:text,addedBy:S.user.name,addedAt:new Date().toISOString()};
     ph.updates.unshift(entry);setBtnBusy(el,'Saving…');
-    try{await saveClients(`Update ${phaseName}: ${mod.name}`);showToast('Update added ✓');navigate('impl-phase-detail',{clientId:cid,projectId:pid,moduleId:mid,phase:phaseName});}
+    try{await saveClients(`Update ${phaseName}: ${mod.name}`);showToast('Update added ✓');navigate('impl-phase-detail',{clientId:cid,moduleId:mid,phase:phaseName});}
     catch(err){ph.updates.shift();showToast('Failed: '+err.message,'error');clearBtnBusy(el);}
     return;
   }
   if(act==='save-edit-impl-update'){
     if(!can('edit'))return;
-    const cid=el.dataset.cid,pid=el.dataset.pid,mid=el.dataset.mid,phaseName=el.dataset.phase,tid=el.dataset.tid;
-    const c=S.clients.find(x=>x.id===cid);const p=c?.projects?.find(x=>x.id===pid);const mod=p?.modules?.find(x=>x.id===mid);if(!mod)return;
+    const cid=el.dataset.cid,mid=el.dataset.mid,phaseName=el.dataset.phase,tid=el.dataset.tid;
+    const c=S.clients.find(x=>x.id===cid);const mod=(c?.modules||[]).find(x=>x.id===mid);if(!mod)return;
     const ph=mod.phases.find(x=>x.name===phaseName);if(!ph||!ph.updates)return;
     const idx=ph.updates.findIndex(x=>x.id===tid);if(idx<0)return;
     const newText=document.getElementById(`edit-tl-${tid}`)?.value.trim();
@@ -1730,80 +1980,109 @@ document.addEventListener('click',async e=>{
     const updated={...original,edits:[...(original.edits||[]),{text:original.update,editedAt:new Date().toISOString(),editedBy:S.user.name}],update:newText,lastEditedAt:new Date().toISOString(),lastEditedBy:S.user.name};
     ph.updates[idx]=updated;
     setBtnBusy(el,'Saving…');
-    try{await saveClients(`Edit update: ${phaseName}, ${mod.name}`);S.editingTimelineId=null;showToast('Update edited ✓');navigate('impl-phase-detail',{clientId:cid,projectId:pid,moduleId:mid,phase:phaseName});}
+    try{await saveClients(`Edit update: ${phaseName}, ${mod.name}`);S.editingTimelineId=null;showToast('Update edited ✓');navigate('impl-phase-detail',{clientId:cid,moduleId:mid,phase:phaseName});}
     catch(err){ph.updates[idx]=snapshot;showToast('Failed: '+err.message,'error');clearBtnBusy(el);}
     return;
   }
-  if(act==='log-ams-hours'){
-    if(!can('edit'))return;
-    const cid=el.dataset.cid;
-    const c=S.clients.find(x=>x.id===cid);if(!c)return;
-    const date=document.getElementById('ams-date')?.value;
-    const category=document.getElementById('ams-category')?.value;
-    const hours=parseFloat(document.getElementById('ams-hours')?.value);
-    const description=document.getElementById('ams-desc')?.value?.trim()||'';
-    if(!date||!hours||hours<=0){showToast('Date and hours required','error');return;}
-    const entry={id:uid(),date,category,description,hours,loggedBy:S.user.name,loggedAt:new Date().toISOString()};
-    if(!c.workLog)c.workLog=[];
-    c.workLog.push(entry);setBtnBusy(el,'Saving…');
-    try{await saveClients(`Log hours: ${c.name}`);showToast('Entry added ✓');navigate('ams-client-detail',{clientId:cid});}
-    catch(err){c.workLog.pop();showToast('Failed: '+err.message,'error');clearBtnBusy(el);}
-    return;
-  }
-  if(act==='edit-ams-entry'){
-    if(!can('edit'))return;
-    S.editingAmsEntryId=el.dataset.eid;render();
-    setTimeout(()=>{const inp=document.getElementById(`edit-ams-desc-${el.dataset.eid}`);if(inp)inp.focus();},50);
-    return;
-  }
-  if(act==='cancel-edit-ams-entry'){S.editingAmsEntryId=null;render();return;}
   if(act==='toggle-ams-history'){
     const eid=el.dataset.eid;
     if(S.expandedAmsHistory.has(eid))S.expandedAmsHistory.delete(eid);else S.expandedAmsHistory.add(eid);
     render();return;
   }
-  if(act==='save-edit-ams-entry'){
-    if(!can('edit'))return;
-    const cid=el.dataset.cid,eid=el.dataset.eid;
-    const c=S.clients.find(x=>x.id===cid);if(!c||!c.workLog)return;
-    const idx=c.workLog.findIndex(x=>x.id===eid);if(idx<0)return;
-    const original=c.workLog[idx];
-    const newDate=document.getElementById(`edit-ams-date-${eid}`)?.value;
-    const newCategory=document.getElementById(`edit-ams-cat-${eid}`)?.value;
-    const newDesc=document.getElementById(`edit-ams-desc-${eid}`)?.value?.trim()||'';
-    const newHours=parseFloat(document.getElementById(`edit-ams-hours-${eid}`)?.value);
-    if(!newDate||!newHours||newHours<=0){showToast('Date and hours required','error');return;}
-    const unchanged=newDate===original.date&&newCategory===original.category&&newDesc===(original.description||'')&&newHours===Number(original.hours);
-    if(unchanged){S.editingAmsEntryId=null;render();return;}
-    const snapshot=JSON.parse(JSON.stringify(original));
-    const updated={...original,edits:[...(original.edits||[]),{date:original.date,category:original.category,description:original.description,hours:original.hours,editedAt:new Date().toISOString(),editedBy:S.user.name}],date:newDate,category:newCategory,description:newDesc,hours:newHours,lastEditedAt:new Date().toISOString(),lastEditedBy:S.user.name};
-    c.workLog[idx]=updated;
-    setBtnBusy(el,'Saving…');
-    try{await saveClients(`Edit hours entry: ${c.name}`);S.editingAmsEntryId=null;showToast('Entry updated ✓');navigate('ams-client-detail',{clientId:cid});}
-    catch(err){c.workLog[idx]=snapshot;showToast('Failed: '+err.message,'error');clearBtnBusy(el);}
+  if(act==='toggle-bulk-impl'){
+    if(!can('admin'))return;
+    const cid=el.dataset.cid;
+    if(S.bulkImplMode&&S.bulkImplCid===cid){
+      S.bulkImplMode=false;S.bulkImplCid=null;S.bulkSelected=new Set();
+    }else{
+      S.bulkImplMode=true;S.bulkImplCid=cid;S.bulkSelected=new Set();
+    }
+    render();return;
+  }
+  if(act==='toggle-bulk-phase'){
+    if(!can('admin'))return;
+    const key=`${el.dataset.mid}:${el.dataset.phase}`;
+    if(S.bulkSelected.has(key))S.bulkSelected.delete(key);else S.bulkSelected.add(key);
+    render();return;
+  }
+  if(act==='bulk-mark-complete'){
+    if(!can('admin'))return;
+    const cid=el.dataset.cid;
+    const c=S.clients.find(x=>x.id===cid);if(!c||!S.bulkSelected.size)return;
+    const now=new Date();const dateStr=todayStr();const isoStr=now.toISOString();
+    const byUser=S.user.name;
+    const changed=[];
+    S.bulkSelected.forEach(key=>{
+      const [mid,phaseName]=key.split(/:(.+)/);
+      const mod=(c.modules||[]).find(x=>x.id===mid);if(!mod)return;
+      const idx=mod.phases.findIndex(x=>x.name===phaseName);
+      const ph=idx>=0?mod.phases[idx]:{name:phaseName,status:'Not Started',startDate:'',targetDate:'',updates:[]};
+      if(!ph.updates)ph.updates=[];
+      ph.status='Completed';
+      ph.updates.unshift({id:uid(),date:dateStr,update:`Marked complete via bulk action by ${byUser}.`,addedBy:byUser,addedAt:isoStr});
+      if(idx>=0)mod.phases[idx]=ph;else mod.phases.push(ph);
+      changed.push(`${phaseName} (${mod.name})`);
+    });
+    setBtnBusy(el,`Saving…`);
+    try{
+      await saveClients(`Bulk complete: ${changed.length} phases — ${c.name}`);
+      S.bulkImplMode=false;S.bulkImplCid=null;S.bulkSelected=new Set();
+      showToast(`${changed.length} phase${changed.length===1?'':'s'} marked complete ✓`);
+      navigate('impl-client-detail',{clientId:cid});
+    }catch(err){
+      showToast('Save failed: '+err.message,'error');clearBtnBusy(el);
+    }
     return;
   }
+  if(act==='delete-impl-module'){
+    if(!can('admin'))return;
+    const c=S.clients.find(x=>x.id===el.dataset.cid);const m=(c?.modules||[]).find(x=>x.id===el.dataset.mid);if(!m)return;
+    S.modal={type:'confirm',msg:`Delete module "${m.name}" and all its phase data? This cannot be undone.`,_act:'delete-impl-module',_cid:c.id,_mid:m.id};render();return;
+  }
+  if(act==='delete-timeline-entry'){
+    if(!can('admin'))return;
+    const c=S.clients.find(x=>x.id===el.dataset.cid);const i=c?.integrations.find(x=>x.id===el.dataset.iid);if(!i)return;
+    S.modal={type:'confirm',msg:`Delete this update? This cannot be undone.`,_act:'delete-timeline-entry',_cid:c.id,_iid:i.id,_tid:el.dataset.tid};render();return;
+  }
+  if(act==='delete-impl-update'){
+    if(!can('admin'))return;
+    const c=S.clients.find(x=>x.id===el.dataset.cid);const mod=(c?.modules||[]).find(x=>x.id===el.dataset.mid);if(!mod)return;
+    const ph=mod.phases?.find(x=>x.name===el.dataset.phase);if(!ph)return;
+    S.modal={type:'confirm',msg:`Delete this update? This cannot be undone.`,_act:'delete-impl-update',_cid:c.id,_mid:mod.id,_phase:el.dataset.phase,_tid:el.dataset.tid};render();return;
+  }
+  if(act==='delete-ams-entry'){
+    if(!can('admin'))return;
+    const c=S.clients.find(x=>x.id===el.dataset.cid);const e=c?.workLog?.find(x=>x.id===el.dataset.eid);if(!e)return;
+    S.modal={type:'confirm',msg:`Delete this entry (${fmtDate(entryDate(e))})? This cannot be undone.`,_act:'delete-ams-entry',_cid:c.id,_eid:e.id};render();return;
+  }
+  if(act==='edit-ams-entry'){
+    if(!can('edit'))return;
+    const c=S.clients.find(x=>x.id===el.dataset.cid);const e=c?.workLog?.find(x=>x.id===el.dataset.eid);if(!e)return;
+    S.modal={type:'edit-ams-entry',cid:el.dataset.cid,eid:el.dataset.eid,
+      dateRaised:entryDate(e),raisedBy:entryRaisedBy(e),module:e.module||'',project:e.project||'',
+      description:e.description||'',type:entryType(e),queryLevel:e.queryLevel||AMS_QUERY_LEVELS[0],
+      dependencies:e.dependencies||'',entryStatus:e.entryStatus||'Open',solution:e.solution||'',
+      modeOfSupport:e.modeOfSupport||AMS_MODES[0],hours:e.hours||''};
+    render();setTimeout(()=>document.getElementById('ae-date')?.focus(),50);return;
+  }
+  if(act==='exp-ams-activity'){if(!can('admin'))return;setBtnBusy(el,'Generating…');try{exportAmsActivityPdf(el.dataset.cid);}finally{clearBtnBusy(el);}return;}
   if(act==='delete-client'){
     if(!can('admin'))return;const c=S.clients.find(x=>x.id===el.dataset.id);if(!c)return;
-    const other=c.projects!==undefined||c.manDayRate!==undefined;
+    const other=c.modules!==undefined||c.workLog!==undefined;
     S.modal={type:'confirm',msg:other?`Remove "${c.name}" from Integrations (their ${c.integrations.length} integrations)? They'll stay in other sections. Cannot be undone.`:`Delete "${c.name}" entirely, including all ${c.integrations.length} integrations? Cannot be undone.`,_act:'delete-client',_id:c.id};render();return;
   }
   if(act==='delete-impl-client'){
     if(!can('admin'))return;const c=S.clients.find(x=>x.id===el.dataset.id);if(!c)return;
-    const other=c.integrations.length>0||c.manDayRate!==undefined;
-    S.modal={type:'confirm',msg:other?`Remove "${c.name}" from Implementations (their ${(c.projects||[]).length} projects)? They'll stay in other sections. Cannot be undone.`:`Delete "${c.name}" entirely, including all ${(c.projects||[]).length} projects? Cannot be undone.`,_act:'delete-impl-client',_id:c.id};render();return;
+    const other=c.integrations.length>0||c.workLog!==undefined;
+    S.modal={type:'confirm',msg:other?`Remove "${c.name}" from Implementations (their ${(c.modules||[]).length} modules)? They'll stay in other sections. Cannot be undone.`:`Delete "${c.name}" entirely, including all ${(c.modules||[]).length} modules? Cannot be undone.`,_act:'delete-impl-client',_id:c.id};render();return;
   }
   if(act==='delete-integ'){
     if(!can('admin'))return;const c=S.clients.find(x=>x.id===el.dataset.cid);const i=c?.integrations.find(x=>x.id===el.dataset.iid);if(!i)return;
     S.modal={type:'confirm',msg:`Delete "${i.name}"? Cannot be undone.`,_act:'delete-integ',_cid:c.id,_iid:i.id};render();return;
   }
-  if(act==='delete-impl-project'){
-    if(!can('admin'))return;const c=S.clients.find(x=>x.id===el.dataset.cid);const p=c?.projects?.find(x=>x.id===el.dataset.pid);if(!p)return;
-    S.modal={type:'confirm',msg:`Delete project "${p.name}"? Cannot be undone.`,_act:'delete-impl-project',_cid:c.id,_pid:p.id};render();return;
-  }
   if(act==='delete-ams-client'){
     if(!can('admin'))return;const c=S.clients.find(x=>x.id===el.dataset.id);if(!c)return;
-    const other=c.integrations.length>0||c.projects!==undefined;
+    const other=c.integrations.length>0||c.modules!==undefined;
     S.modal={type:'confirm',msg:other?`Remove "${c.name}" from AMS (all logged hours)? They'll stay in other sections. Cannot be undone.`:`Delete "${c.name}" entirely, including all logged hours? Cannot be undone.`,_act:'delete-ams-client',_id:c.id};render();return;
   }
   if(act==='edit-ams-client'){
@@ -1820,7 +2099,7 @@ document.addEventListener('click',async e=>{
       S.modal={...m,busy:true};render();
       if(m._act==='delete-client'){
         const idx=S.clients.findIndex(x=>x.id===m._id);if(idx<0){S.modal=null;render();return;}
-        const c=S.clients[idx];const other=c.projects!==undefined||c.manDayRate!==undefined;
+        const c=S.clients[idx];const other=c.modules!==undefined||c.workLog!==undefined;
         const snapshot=JSON.parse(JSON.stringify(c));
         if(other){c.integrations=[];}else{S.clients.splice(idx,1);}
         try{await saveClients(`Remove Integration data: ${snapshot.name}`);S.modal=null;showToast(`${snapshot.name} removed from Integrations`);render();}
@@ -1841,26 +2120,48 @@ document.addEventListener('click',async e=>{
       }
       else if(m._act==='delete-impl-client'){
         const idx=S.clients.findIndex(x=>x.id===m._id);if(idx<0){S.modal=null;render();return;}
-        const c=S.clients[idx];const other=c.integrations.length>0||c.manDayRate!==undefined;
+        const c=S.clients[idx];const other=c.integrations.length>0||c.workLog!==undefined;
         const snapshot=JSON.parse(JSON.stringify(c));
-        if(other){delete c.projects;}else{S.clients.splice(idx,1);}
+        if(other){delete c.modules;}else{S.clients.splice(idx,1);}
         try{await saveClients(`Remove Implementation data: ${snapshot.name}`);S.modal=null;showToast(`${snapshot.name} removed from Implementations`);render();}
-        catch(err){if(other){c.projects=snapshot.projects;}else{S.clients.splice(idx,0,snapshot);}S.modal=null;showToast('Failed: '+err.message,'error');render();}
-      }
-      else if(m._act==='delete-impl-project'){
-        const c=S.clients.find(x=>x.id===m._cid);if(!c){S.modal=null;render();return;}
-        const idx=c.projects.findIndex(x=>x.id===m._pid);if(idx<0){S.modal=null;render();return;}
-        const[rem]=c.projects.splice(idx,1);
-        try{await saveClients(`Delete ${rem.name}`);S.modal=null;showToast(`${rem.name} deleted`);navigate('impl-client-detail',{clientId:m._cid});}
-        catch(err){c.projects.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
+        catch(err){if(other){c.modules=snapshot.modules;}else{S.clients.splice(idx,0,snapshot);}S.modal=null;showToast('Failed: '+err.message,'error');render();}
       }
       else if(m._act==='delete-ams-client'){
         const idx=S.clients.findIndex(x=>x.id===m._id);if(idx<0){S.modal=null;render();return;}
-        const c=S.clients[idx];const other=c.integrations.length>0||c.projects!==undefined;
+        const c=S.clients[idx];const other=c.integrations.length>0||c.modules!==undefined;
         const snapshot=JSON.parse(JSON.stringify(c));
         if(other){delete c.manDayRate;delete c.workLog;}else{S.clients.splice(idx,1);}
         try{await saveClients(`Remove AMS data: ${snapshot.name}`);S.modal=null;showToast(`${snapshot.name} removed from AMS`);navigate('ams-clients');}
         catch(err){if(other){c.manDayRate=snapshot.manDayRate;c.workLog=snapshot.workLog;}else{S.clients.splice(idx,0,snapshot);}S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
+      else if(m._act==='delete-impl-module'){
+        const c=S.clients.find(x=>x.id===m._cid);if(!c){S.modal=null;render();return;}
+        const idx=(c.modules||[]).findIndex(x=>x.id===m._mid);if(idx<0){S.modal=null;render();return;}
+        const[rem]=c.modules.splice(idx,1);
+        try{await saveClients(`Delete module: ${rem.name}`);S.modal=null;showToast(`${rem.name} deleted`);navigate('impl-client-detail',{clientId:m._cid});}
+        catch(err){c.modules.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
+      else if(m._act==='delete-timeline-entry'){
+        const c=S.clients.find(x=>x.id===m._cid);const i=c?.integrations.find(x=>x.id===m._iid);if(!i){S.modal=null;render();return;}
+        const idx=i.timeline.findIndex(x=>x.id===m._tid);if(idx<0){S.modal=null;render();return;}
+        const[rem]=i.timeline.splice(idx,1);
+        try{await saveClients(`Delete update: ${i.name}`);S.modal=null;showToast('Update deleted');navigate('integ-detail',{clientId:m._cid,integId:m._iid});}
+        catch(err){i.timeline.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
+      else if(m._act==='delete-impl-update'){
+        const c=S.clients.find(x=>x.id===m._cid);const mod=(c?.modules||[]).find(x=>x.id===m._mid);if(!mod){S.modal=null;render();return;}
+        const ph=mod.phases?.find(x=>x.name===m._phase);if(!ph||!ph.updates){S.modal=null;render();return;}
+        const idx=ph.updates.findIndex(x=>x.id===m._tid);if(idx<0){S.modal=null;render();return;}
+        const[rem]=ph.updates.splice(idx,1);
+        try{await saveClients(`Delete update: ${m._phase}`);S.modal=null;showToast('Update deleted');navigate('impl-phase-detail',{clientId:m._cid,moduleId:m._mid,phase:m._phase});}
+        catch(err){ph.updates.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
+      else if(m._act==='delete-ams-entry'){
+        const c=S.clients.find(x=>x.id===m._cid);if(!c||!c.workLog){S.modal=null;render();return;}
+        const idx=c.workLog.findIndex(x=>x.id===m._eid);if(idx<0){S.modal=null;render();return;}
+        const[rem]=c.workLog.splice(idx,1);
+        try{await saveClients(`Delete entry: ${c.name}`);S.modal=null;showToast('Entry deleted');navigate('ams-client-detail',{clientId:m._cid});}
+        catch(err){c.workLog.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
       }
     } else if(m.type==='add-client'){
       const name=document.getElementById('m1')?.value.trim(),desc=document.getElementById('m2')?.value.trim();
@@ -1891,44 +2192,36 @@ document.addEventListener('click',async e=>{
       const existingId=document.getElementById('m0')?.value;
       if(existingId){
         const c=S.clients.find(x=>x.id===existingId);if(!c)return;
-        c.projects=[];S.modal={...m,busy:true};render();
+        c.modules=[];S.modal={...m,busy:true};render();
         try{await saveClients(`Enable Implementation tracking: ${c.name}`);S.modal=null;showToast(`${c.name} added to Implementations`);render();}
-        catch(err){delete c.projects;S.modal=null;showToast('Failed: '+err.message,'error');render();}
+        catch(err){delete c.modules;S.modal=null;showToast('Failed: '+err.message,'error');render();}
       }else{
         const name=document.getElementById('m1')?.value.trim();
         if(!name){showToast('Pick a client above or enter a new name','error');return;}
         if(S.clients.find(x=>x.name.toLowerCase()===name.toLowerCase())){showToast(`"${name}" already exists — select it above instead`,'error');return;}
         const desc=document.getElementById('m2')?.value.trim();
-        const nc={id:uid(),name,description:desc||'',createdAt:new Date().toISOString(),integrations:[],projects:[]};
+        const nc={id:uid(),name,description:desc||'',createdAt:new Date().toISOString(),integrations:[],modules:[]};
         S.clients.push(nc);S.modal={...m,busy:true};render();
         try{await saveClients(`Add ${name}`);S.modal=null;showToast(`${name} added`);render();}
         catch(err){S.clients.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
       }
-    } else if(m.type==='add-impl-project'){
-      const name=document.getElementById('m1')?.value.trim(),lead=document.getElementById('m2')?.value.trim(),goLive=document.getElementById('m3')?.value;
-      if(!name){showToast('Name required','error');return;}
-      const c=S.clients.find(x=>x.id===m.cid);if(!c)return;
-      const np={id:uid(),name,projectLead:lead||'',targetGoLive:goLive||'',createdAt:new Date().toISOString(),modules:[]};
-      if(!c.projects)c.projects=[];c.projects.push(np);S.modal={...m,busy:true};render();
-      try{await saveClients(`Add project ${name}`);S.modal=null;showToast(`${name} added`);navigate('impl-client-detail',{clientId:c.id});}
-      catch(err){c.projects.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
     } else if(m.type==='add-impl-module'){
       const name=document.getElementById('m1')?.value.trim();
       if(!name){showToast('Name required','error');return;}
-      const c=S.clients.find(x=>x.id===m.cid);const p=c?.projects?.find(x=>x.id===m.pid);if(!p)return;
+      const c=S.clients.find(x=>x.id===m.cid);if(!c)return;
       const nm={id:uid(),name,phases:PHASES.map(ph=>({name:ph,status:'Not Started',startDate:'',targetDate:'',updates:[]}))};
-      if(!p.modules)p.modules=[];p.modules.push(nm);S.modal={...m,busy:true};render();
-      try{await saveClients(`Add module ${name}`);S.modal=null;showToast(`${name} added`);navigate('impl-project-detail',{clientId:c.id,projectId:p.id});}
-      catch(err){p.modules.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      if(!c.modules)c.modules=[];c.modules.push(nm);S.modal={...m,busy:true};render();
+      try{await saveClients(`Add module ${name}`);S.modal=null;showToast(`${name} added`);navigate('impl-client-detail',{clientId:c.id});}
+      catch(err){c.modules.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
     } else if(m.type==='add-ams-client'){
       const existingId=document.getElementById('m0')?.value;
-      const rate=parseFloat(document.getElementById('m3')?.value);
+      const rateRaw=document.getElementById('m3')?.value;
+      const rate=rateRaw?parseFloat(rateRaw):undefined;
       const availRaw=document.getElementById('m4')?.value;
       const avail=availRaw?parseFloat(availRaw):undefined;
-      if(!rate||rate<=0){showToast('A valid day rate is required','error');return;}
       if(existingId){
         const c=S.clients.find(x=>x.id===existingId);if(!c)return;
-        c.manDayRate=rate;c.workLog=c.workLog||[];if(avail!==undefined)c.totalAvailableHours=avail;
+        if(rate)c.manDayRate=rate;c.workLog=c.workLog||[];if(avail!==undefined)c.totalAvailableHours=avail;
         S.modal={...m,busy:true};render();
         try{await saveClients(`Enable AMS: ${c.name}`);S.modal=null;showToast(`${c.name} added to AMS`);render();}
         catch(err){delete c.manDayRate;delete c.totalAvailableHours;S.modal=null;showToast('Failed: '+err.message,'error');render();}
@@ -1937,24 +2230,51 @@ document.addEventListener('click',async e=>{
         if(!name){showToast('Pick a client above or enter a new name','error');return;}
         if(S.clients.find(x=>x.name.toLowerCase()===name.toLowerCase())){showToast(`"${name}" already exists — select it above instead`,'error');return;}
         const desc=document.getElementById('m2')?.value.trim();
-        const nc={id:uid(),name,description:desc||'',createdAt:new Date().toISOString(),integrations:[],manDayRate:rate,workLog:[]};
-        if(avail!==undefined)nc.totalAvailableHours=avail;
+        const nc={id:uid(),name,description:desc||'',createdAt:new Date().toISOString(),integrations:[],workLog:[]};
+        if(rate)nc.manDayRate=rate;if(avail!==undefined)nc.totalAvailableHours=avail;
         S.clients.push(nc);S.modal={...m,busy:true};render();
         try{await saveClients(`Add ${name}`);S.modal=null;showToast(`${name} added`);render();}
         catch(err){S.clients.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
       }
     } else if(m.type==='edit-ams-client'){
       const c=S.clients.find(x=>x.id===m.cid);if(!c)return;
-      const rate=parseFloat(document.getElementById('m2')?.value);
-      if(!rate||rate<=0){showToast('A valid day rate is required','error');return;}
+      const rateRaw=document.getElementById('m2')?.value;
       const desc=document.getElementById('m1')?.value.trim();
       const availRaw=document.getElementById('m3')?.value;
       const snapshot={description:c.description,manDayRate:c.manDayRate,totalAvailableHours:c.totalAvailableHours};
-      c.description=desc||'';c.manDayRate=rate;
+      c.description=desc||'';
+      if(rateRaw){c.manDayRate=parseFloat(rateRaw);}else{delete c.manDayRate;}
       if(availRaw){c.totalAvailableHours=parseFloat(availRaw);}else{delete c.totalAvailableHours;}
       S.modal={...m,busy:true};render();
       try{await saveClients(`Edit AMS client: ${c.name}`);S.modal=null;showToast('Saved ✓');navigate('ams-client-detail',{clientId:c.id});}
-      catch(err){Object.assign(c,snapshot);if(snapshot.totalAvailableHours===undefined)delete c.totalAvailableHours;S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      catch(err){Object.assign(c,snapshot);if(snapshot.totalAvailableHours===undefined)delete c.totalAvailableHours;if(snapshot.manDayRate===undefined)delete c.manDayRate;S.modal=null;showToast('Failed: '+err.message,'error');render();}
+    } else if(m.type==='add-ams-entry'||m.type==='edit-ams-entry'){
+      if(!can('edit'))return;
+      const cid=m.cid;const c=S.clients.find(x=>x.id===cid);if(!c)return;
+      const dateRaised=document.getElementById('ae-date')?.value;
+      const hours=parseFloat(document.getElementById('ae-hours')?.value);
+      if(!dateRaised||!hours||hours<=0){showToast('Date and hours are required','error');return;}
+      const fields={dateRaised,raisedBy:document.getElementById('ae-raised')?.value?.trim()||S.user.name,
+        module:document.getElementById('ae-module')?.value?.trim()||'',project:document.getElementById('ae-project')?.value?.trim()||'',
+        description:document.getElementById('ae-desc')?.value?.trim()||'',type:document.getElementById('ae-type')?.value,
+        queryLevel:document.getElementById('ae-level')?.value,modeOfSupport:document.getElementById('ae-mode')?.value,
+        entryStatus:document.getElementById('ae-status')?.value,dependencies:document.getElementById('ae-deps')?.value?.trim()||'',
+        solution:document.getElementById('ae-solution')?.value?.trim()||'',hours};
+      if(!c.workLog)c.workLog=[];
+      if(m.type==='add-ams-entry'){
+        const entry={id:uid(),...fields,loggedAt:new Date().toISOString()};
+        c.workLog.push(entry);S.modal={...m,busy:true};render();
+        try{await saveClients(`Add entry: ${c.name}`);S.modal=null;showToast('Entry added ✓');navigate('ams-client-detail',{clientId:cid});}
+        catch(err){c.workLog.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }else{
+        const idx=c.workLog.findIndex(x=>x.id===m.eid);if(idx<0)return;
+        const original=c.workLog[idx];
+        const snapshot=JSON.parse(JSON.stringify(original));
+        const updated={...original,...fields,edits:[...(original.edits||[]),{description:original.description,hours:original.hours,dateRaised:entryDate(original),editedAt:new Date().toISOString(),editedBy:S.user.name}],lastEditedAt:new Date().toISOString(),lastEditedBy:S.user.name};
+        c.workLog[idx]=updated;S.modal={...m,busy:true};render();
+        try{await saveClients(`Edit entry: ${c.name}`);S.modal=null;showToast('Entry updated ✓');navigate('ams-client-detail',{clientId:cid});}
+        catch(err){c.workLog[idx]=snapshot;S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
     }
   }
 });
