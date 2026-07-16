@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -111,6 +112,9 @@ if(S.darkMode)document.documentElement.classList.add('dark');
 const STATUSES=['Not Started','In Progress','At Risk','On Hold — Internal','On Hold — Client','Pending Client','Under Review','Delayed','Cancelled','Completed'];
 const ROLES=['viewer','editor','admin'];
 const PHASES=['BPU','BPU Signoff','CRP','CRP Signoff','UAT','UAT Signoff','Data Migration / Production Migration','Go Live','Hypercare'];
+const SIGNOFF_PHASES=['BPU Signoff','CRP Signoff','UAT Signoff'];
+const CURRENCIES={INR:{symbol:'₹',code:'INR'},USD:{symbol:'$',code:'USD'}};
+const MILESTONE_STATUSES=['Pending','Achieved','Missed'];
 const AMS_TYPES=['Bug Fix','Enhancement','Config Change','Support Ticket','Reporting','Training','Meeting','Consultation'];
 const AMS_QUERY_LEVELS=['L1 - Low','L2 - Medium','L3 - High','L4 - Critical'];
 const AMS_ENTRY_STATUSES=['Open','In Progress','Closed'];
@@ -493,7 +497,10 @@ function renderDashboard(){
   });
 
   return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
-  <h1 class="text-2xl font-bold text-gray-900 mb-1">Dashboard</h1>
+  <div class="flex items-center justify-between mb-1">
+    <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+    ${can('admin')?`<button data-act="portfolio-export" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">📦 Portfolio Export</button>`:''}
+  </div>
   <p class="text-sm text-gray-400 mb-6">Overview across all clients and integrations</p>
 
   <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
@@ -633,10 +640,11 @@ function implProgress(client){
 function renderImplClientList(){
   const implClients=S.clients.filter(c=>c.modules!==undefined);
   const totalModules=implClients.reduce((a,c)=>a+(c.modules?.length||0),0);
-  const atRiskClients=implClients.filter(c=>implProgress(c).atRisk>0).length;
+  const atRiskClients=implClients.filter(c=>implAutoRag(c)==='Red').length;
+  const amberClients=implClients.filter(c=>implAutoRag(c)==='Amber').length;
   return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
-  <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-    ${[['Clients',implClients.length,'text-[#0e7490]','bg-[#0e7490]/10'],['Total Modules',totalModules,'text-gray-700','bg-gray-100'],['Clients with Risk',atRiskClients,'text-rose-600','bg-rose-50']].map(([l,v,tc,bg])=>`<div class="${bg} rounded-2xl p-4"><div class="text-2xl font-bold ${tc}">${v}</div><div class="text-xs text-gray-500 mt-0.5">${l}</div></div>`).join('')}
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    ${[['Clients',implClients.length,'text-[#0e7490]','bg-[#0e7490]/10'],['Total Modules',totalModules,'text-gray-700','bg-gray-100'],['Amber',amberClients,'text-amber-600','bg-amber-50'],['Red',atRiskClients,'text-rose-600','bg-rose-50']].map(([l,v,tc,bg])=>`<div class="${bg} rounded-2xl p-4"><div class="text-2xl font-bold ${tc}">${v}</div><div class="text-xs text-gray-500 mt-0.5">${l}</div></div>`).join('')}
   </div>
   <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
     <h1 class="text-xl font-bold text-gray-900">Implementations</h1>
@@ -646,14 +654,16 @@ function renderImplClientList(){
     ${implClients.length?implClients.map((c,idx)=>{
       const mods=c.modules||[];
       const pr=implProgress(c);
+      const rag=implAutoRag(c);
+      const barColor=rag==='Red'?'bg-rose-500':rag==='Amber'?'bg-amber-500':'bg-green-500';
       return`<div data-act="open-impl-client" data-id="${c.id}" style="animation-delay:${Math.min(idx*35,400)}ms" class="row-in card-hover bg-white rounded-2xl border border-gray-100 p-5 hover:border-[#0e7490]/30 transition cursor-pointer relative overflow-hidden">
-        <div class="absolute left-0 top-0 bottom-0 w-1 ${pr.atRisk>0?'bg-rose-500':'bg-green-500'}"></div>
+        <div class="absolute left-0 top-0 bottom-0 w-1 ${barColor}"></div>
         <div class="flex items-start justify-between mb-2 pl-1.5">
           <div class="flex-1 min-w-0 pr-2"><div class="font-semibold text-gray-900" title="${esc(c.name)}">${esc(c.name)}</div>${c.description?`<div class="text-xs text-gray-400 mt-0.5 truncate" title="${esc(c.description)}">${esc(c.description)}</div>`:''}</div>
-          <span class="text-2xl font-extrabold text-[#0e7490] opacity-60 shrink-0">${mods.length}</span>
+          ${rag?ragBadge(rag):''}
         </div>
-        <div class="text-xs text-gray-400 pl-1.5">${mods.length} module${mods.length!==1?'s':''}</div>
-        ${pr.atRisk>0?`<div class="text-xs text-rose-500 pl-1.5 mt-1">${pr.atRisk} phase${pr.atRisk!==1?'s':''} at risk</div>`:''}
+        <div class="text-xs text-gray-400 pl-1.5">${mods.length} module${mods.length!==1?'s':''} · ${pr.completed}/${pr.total} phases</div>
+        ${pr.total>0?`<div class="h-1 bg-gray-100 rounded-full overflow-hidden mt-2 pl-0"><div class="h-full rounded-full ${barColor==='bg-rose-500'?'bg-rose-400':barColor==='bg-amber-500'?'bg-amber-400':'bg-[#0e7490]'}" style="width:${pr.pct}%"></div></div>`:''}
       </div>`;
     }).join(''):`<div class="col-span-3 text-center py-16 text-gray-400">${emptyIcon('inbox')}No implementation clients yet. Add one to get started.</div>`}
   </div>
@@ -674,7 +684,10 @@ function renderImplClientDetail(clientId){
   </div>
   <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
     <div>
-      <h1 class="text-xl font-bold text-gray-900">${esc(c.name)}</h1>
+      <div class="flex items-center gap-3 flex-wrap">
+        <h1 class="text-xl font-bold text-gray-900">${esc(c.name)}</h1>
+        ${(()=>{const r=implAutoRag(c);return r?ragBadge(r):''})()}
+      </div>
       ${c.description?`<p class="text-sm text-gray-400 mt-0.5">${esc(c.description)}</p>`:''}
       ${pr.total>0?`<p class="text-xs text-gray-400 mt-1">${pr.completed}/${pr.total} phases complete · ${pr.pct}%${pr.atRisk>0?` · <span class="text-rose-500">${pr.atRisk} at risk</span>`:''}</p>`:''}
     </div>
@@ -684,6 +697,7 @@ function renderImplClientDetail(clientId){
       :`${can('admin')?`<button data-act="toggle-bulk-impl" data-cid="${c.id}" class="bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium px-3 py-2 rounded-xl hover:bg-amber-100 transition">✓ Bulk Mark Complete</button>`:''}
         <button data-act="modal-open" data-modal="add-impl-module" data-cid="${c.id}" class="bg-green-50 border border-green-200 text-green-700 text-xs font-medium px-3 py-2 rounded-xl hover:bg-green-100 transition">+ Add Module</button>
         <button data-act="exp-impl-pdf" data-cid="${c.id}" class="btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">📄 Export PDF</button>
+      <button data-act="exp-excel" data-etype="impl" data-cid="${c.id}" class="bg-green-50 border border-green-200 text-green-700 text-xs font-medium px-3 py-2 rounded-xl hover:bg-green-100 transition">📊 Excel</button>
         ${can('admin')?`<button data-act="delete-impl-client" data-id="${c.id}" class="text-rose-400 hover:text-rose-600 text-xs px-2">Remove Client</button>`:''}`}
     </div>
   </div>
@@ -863,6 +877,60 @@ function amsStatusBadge(s){const m={'Open':'bg-blue-50 text-blue-700 border-blue
 function entryDate(e){return e.dateRaised||e.date||''}
 function entryType(e){return e.type||e.category||'—'}
 function entryRaisedBy(e){return e.raisedBy||e.loggedBy||'—'}
+function currencySymbol(client){return CURRENCIES[client?.currency||'INR']?.symbol||'₹';}
+function implAutoRag(client){
+  const today=todayStr();let hasRed=false,hasAmber=false,hasInProgress=false;
+  (client.modules||[]).forEach(m=>(m.phases||[]).forEach(ph=>{
+    if(ph.status==='Completed'||ph.status==='Not Started')return;
+    hasInProgress=true;
+    if(ph.status==='At Risk'){hasRed=true;return;}
+    if(ph.targetDate){
+      const d=daysDiff(ph.targetDate);
+      if(d>=14){hasRed=true;return;}
+      if(d>=1){hasAmber=true;return;}
+    }
+    const updates=ph.updates||[];
+    if(!updates.length){hasAmber=true;return;}
+    const lastUpd=updates.reduce((a,u)=>{ const dt=u.addedAt||u.date||''; return dt>a?dt:a; },'');
+    const daysAgo=lastUpd?Math.floor((Date.now()-new Date(lastUpd))/86400000):99;
+    if(daysAgo>=14)hasRed=true;
+    else if(daysAgo>=7)hasAmber=true;
+  }));
+  if(!hasInProgress&&(client.modules||[]).length>0)return'Green';
+  if(hasRed)return'Red';
+  if(hasAmber)return'Amber';
+  if(!hasInProgress)return null;
+  return'Green';
+}
+function parseAmsEntriesCsv(text){
+  const lines=text.trim().split('\n').filter(l=>l.trim());
+  if(!lines.length)return[];
+  const hasHeader=lines[0].toLowerCase().includes('date_raised')||lines[0].toLowerCase().includes('date raised');
+  const dataLines=hasHeader?lines.slice(1):lines;
+  return dataLines.map((line,i)=>{
+    const p=line.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+    const [date_raised,due_date,raised_by,module,project,description,type,query_level,entry_status,mode_of_support,hours]=p;
+    let error=null;
+    if(!date_raised)error='date_raised required';
+    else if(!hours||isNaN(parseFloat(hours)))error='hours required (number)';
+    else if(!description)error='description required';
+    return{dateRaised:date_raised,dueDate:due_date||'',raisedBy:raised_by||'',module:module||'',project:project||'',description:description||'',type:type||AMS_TYPES[0],queryLevel:query_level||AMS_QUERY_LEVELS[0],entryStatus:entry_status||'Open',modeOfSupport:mode_of_support||AMS_MODES[0],hours:parseFloat(hours)||0,error,row:i+(hasHeader?2:1)};
+  });
+}
+function parseIntegrationsCsv(text,existingIntegs=[]){
+  const lines=text.trim().split('\n').filter(l=>l.trim());
+  if(!lines.length)return[];
+  const hasHeader=lines[0].toLowerCase().includes('name')||lines[0].toLowerCase().includes('integration');
+  const dataLines=hasHeader?lines.slice(1):lines;
+  return dataLines.map((line,i)=>{
+    const p=line.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+    const [name,status,assignee,due_date,description,next_action]=p;
+    let error=null;
+    if(!name)error='name required';
+    else if(existingIntegs.find(x=>x.name.toLowerCase()===name.toLowerCase()))error=`"${name}" already exists`;
+    return{name:name||'',status:STATUSES.includes(status)?status:'Not Started',assignee:assignee||'',dueDate:due_date||'',description:description||'',nextAction:next_action||'',error,row:i+(hasHeader?2:1)};
+  });
+}
 const RAG_BADGE={Red:'bg-rose-100 text-rose-700 border-rose-200',Amber:'bg-amber-100 text-amber-700 border-amber-200',Green:'bg-green-100 text-green-700 border-green-200'};
 const RAG_DOT={Red:'bg-rose-500',Amber:'bg-amber-500',Green:'bg-green-500'};
 function ragBadge(rag,size='sm'){if(!rag)return'<span class="text-gray-300 text-xs">—</span>';return`<span class="text-${size} font-semibold border px-1.5 py-0.5 rounded-lg ${RAG_BADGE[rag]||''}">${rag==='Red'?'🔴':rag==='Amber'?'🟡':'🟢'} ${rag}</span>`;}
@@ -916,7 +984,7 @@ function renderAmsClientList(){
         </div>
         ${c.description?`<div class="text-xs text-gray-400 mb-3 truncate" title="${esc(c.description)}">${esc(c.description)}</div>`:''}
         <div class="text-xs text-gray-500">${t.totalHours.toFixed(1)} hours logged total</div>
-        ${can('admin')&&c.manDayRate?`<div class="text-xs text-gray-400 mt-1">₹${c.manDayRate.toLocaleString('en-IN')}/day rate</div>`:can('admin')?`<div class="text-xs text-gray-400 mt-1">Retainer (no rate)</div>`:''}
+        ${can('admin')&&c.manDayRate?`<div class="text-xs text-gray-400 mt-1">${currencySymbol(c)}${c.manDayRate.toLocaleString('en-IN')}/day rate</div>`:can('admin')?`<div class="text-xs text-gray-400 mt-1">Retainer (no rate)</div>`:''}
         ${t.hasBucket?`<div class="text-xs mt-1 ${t.balanceAvailable>0?'text-green-600':'text-rose-600'} font-medium">${t.balanceAvailable.toFixed(1)} / ${t.totalAvailableHours.toFixed(1)} hrs available</div>`:''}
       </div>`;
     }).join(''):`<div class="col-span-3 text-center py-16 text-gray-400">${emptyIcon('hours')}No AMS clients yet.</div>`;})()}
@@ -958,11 +1026,13 @@ function renderAmsClientDetail(clientId){
       <div><label class="block text-xs text-gray-400 mb-1">To</label><input id="ams-to" data-act="ams-range" type="date" value="${esc(S.amsTo)}" class="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <button data-act="exp-ams-invoice" data-cid="${c.id}" class="btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">📄 Invoice PDF</button>
       <button data-act="exp-ams-activity" data-cid="${c.id}" class="bg-white border border-[#0e7490] text-[#0e7490] text-sm font-medium px-4 py-2 rounded-xl hover:bg-[#0e7490]/5 transition">📋 Activity Report</button>
+      <button data-act="exp-excel" data-etype="ams" data-cid="${c.id}" class="bg-green-50 border border-green-200 text-green-700 text-sm font-medium px-3 py-2 rounded-xl hover:bg-green-100 transition">📊 Excel</button>
+      <button data-act="open-import-ams" data-cid="${c.id}" class="bg-amber-50 border border-amber-200 text-amber-700 text-sm font-medium px-3 py-2 rounded-xl hover:bg-amber-100 transition">⬆ Import</button>
     </div>
     <div class="grid grid-cols-3 gap-4 mb-4">
       <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">${t.totalHours.toFixed(1)}</div><div class="text-xs text-gray-500">Hours This Period${t.hasBucket?` (${t.coveredHours.toFixed(1)} covered)`:''}</div></div>
-      <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">₹${(c.manDayRate||0).toLocaleString('en-IN')}</div><div class="text-xs text-gray-500">Day Rate</div></div>
-      <div class="bg-[#0e7490]/10 rounded-xl p-4"><div class="text-2xl font-bold text-[#0e7490]">₹${(t.totalAmount||0).toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="text-xs text-gray-500">Billable Amount</div></div>
+      <div class="bg-gray-50 rounded-xl p-4"><div class="text-2xl font-bold text-gray-700">${currencySymbol(c)}${(c.manDayRate||0).toLocaleString('en-IN')}</div><div class="text-xs text-gray-500">Day Rate</div></div>
+      <div class="bg-[#0e7490]/10 rounded-xl p-4"><div class="text-2xl font-bold text-[#0e7490]">${currencySymbol(c)}${(t.totalAmount||0).toLocaleString('en-IN',{maximumFractionDigits:0})}</div><div class="text-xs text-gray-500">Billable Amount</div></div>
     </div>
     <div class="flex flex-wrap gap-2">
       ${Object.entries(t.byType).map(([tp,hrs])=>`<span class="text-xs bg-gray-50 border border-gray-200 rounded-full px-3 py-1 text-gray-600">${esc(tp)}: ${hrs.toFixed(1)}h</span>`).join('')||'<span class="text-xs text-gray-400">No entries in this range</span>'}
@@ -1046,9 +1116,13 @@ function renderClientDetail(clientId){
       <button class="flex items-center gap-1.5 btn-grad text-white text-sm font-medium px-4 py-2 rounded-xl transition">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>Export ▾
       </button>
-      <div class="absolute right-0 top-full mt-1 bg-white border border-gray-100 rounded-xl shadow-xl w-44 py-1 hidden group-hover:block z-10">
+      <div class="absolute right-0 top-full mt-1 bg-white border border-gray-100 rounded-xl shadow-xl w-52 py-1 hidden group-hover:block z-10">
         <button data-act="exp-pptx" data-id="${c.id}" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">📊 PowerPoint</button>
         <button data-act="exp-pdf"  data-id="${c.id}" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">📄 PDF</button>
+        <button data-act="exp-excel" data-etype="integrations" data-cid="${c.id}" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">📋 Excel (Integrations)</button>
+        <button data-act="exp-excel" data-etype="milestones" data-cid="${c.id}" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">🎯 Excel (Milestones)</button>
+        <div class="border-t border-gray-100 my-1"></div>
+        <button data-act="open-import-integ" data-cid="${c.id}" class="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">⬆ Import Integrations (CSV)</button>
       </div>
     </div>
   </div>
@@ -1166,6 +1240,29 @@ function renderIntegDetail(clientId,integId){
         }).join('')}
       </div>
     </div>
+  </div>
+  <div class="mt-6 bg-white rounded-2xl border border-gray-100 p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-semibold text-gray-900 text-sm">Milestones</h3>
+      ${can('edit')?`<button data-act="add-milestone-btn" data-cid="${c.id}" data-iid="${i.id}" class="text-xs text-[#0e7490] font-semibold border border-[#0e7490]/30 bg-[#0e7490]/5 px-3 py-1.5 rounded-xl hover:bg-[#0e7490]/10 transition">+ Add Milestone</button>`:''}
+    </div>
+    ${(i.milestones||[]).length?`<div class="space-y-2">
+      ${(i.milestones||[]).map(ms=>{
+        const msColor=ms.status==='Achieved'?'green':ms.status==='Missed'?'rose':'amber';
+        return`<div class="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:border-gray-200 transition">
+          <div class="w-2 h-2 rounded-full bg-${msColor}-500 shrink-0"></div>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-medium text-gray-900">${esc(ms.name)}</div>
+            <div class="text-xs text-gray-400 mt-0.5">${ms.owner?`Owner: ${esc(ms.owner)} · `:''}${ms.dueDate?`Due: ${fmtDate(ms.dueDate)}`:'No due date'}${ms.notes?` · ${esc(ms.notes)}`:''}</div>
+          </div>
+          <span class="text-xs font-semibold bg-${msColor}-50 text-${msColor}-700 border border-${msColor}-200 px-2 py-0.5 rounded-full shrink-0">${ms.status}</span>
+          ${can('edit')?`<div class="flex gap-2 shrink-0">
+            <button data-act="edit-milestone-btn" data-cid="${c.id}" data-iid="${i.id}" data-mid="${ms.id}" class="text-xs text-gray-300 hover:text-[#0e7490]">Edit</button>
+            ${can('admin')?`<button data-act="delete-milestone" data-cid="${c.id}" data-iid="${i.id}" data-mid="${ms.id}" class="text-xs text-gray-300 hover:text-rose-500">Delete</button>`:''}
+          </div>`:''}
+        </div>`;
+      }).join('')}
+    </div>`:`<div class="text-center py-8 text-gray-400 text-sm">No milestones yet. Add key checkpoints for this integration.</div>`}
   </div>
 </div>`;
 }
@@ -1419,6 +1516,12 @@ function renderModal(){
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Man-Day Rate (₹) <span class="text-gray-400 font-normal">optional — leave blank for retainer/hours-only</span></label><input id="m3" type="number" min="0" placeholder="e.g. 15000" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours <span class="text-gray-400 font-normal">optional</span></label><input id="m4" type="number" min="0" step="0.5" autocomplete="off" placeholder="Leave blank if not applicable" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
       <p class="text-xs text-gray-400 mt-1">If set, hours are deducted from this pool first — only overages get billed.</p></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Billing Currency</label>
+        <select id="m5" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">
+          <option value="INR">INR (₹ Indian Rupee)</option>
+          <option value="USD">USD ($ US Dollar)</option>
+        </select>
+      </div>
     </div>`;
   } else if(m.type==='edit-ams-client'){
     title='Edit AMS Client';
@@ -1426,6 +1529,12 @@ function renderModal(){
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m1" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(m.description||'')}</textarea></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Man-Day Rate (₹) <span class="text-gray-400 font-normal">optional</span></label><input id="m2" type="number" min="0" value="${m.manDayRate||''}" placeholder="Leave blank for retainer/hours-only" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours <span class="text-gray-400 font-normal">optional</span></label><input id="m3" type="number" min="0" step="0.5" value="${m.totalAvailableHours??''}" placeholder="Leave blank if not applicable" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Billing Currency</label>
+        <select id="m4" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">
+          <option value="INR"${(m.currency||'INR')==='INR'?' selected':''}>INR (₹ Indian Rupee)</option>
+          <option value="USD"${m.currency==='USD'?' selected':''}>USD ($ US Dollar)</option>
+        </select>
+      </div>
     </div>`;
     btnLabel='Save';
   } else if(m.type==='add-ams-entry'||m.type==='edit-ams-entry'){
@@ -1459,6 +1568,73 @@ function renderModal(){
       ${fg('ae-desc','Description',ta('ae-desc',m.description||'','What was the issue, query or activity?',2))}
       ${fg('ae-solution','Solution Discussed',ta('ae-solution',m.solution||'','Summary of resolution or discussion',2),'optional')}
     </div>`;
+  } else if(m.type==='import-ams-entries'){
+    const rows=m.csvRows||[];const valid=rows.filter(r=>!r.error);const errs=rows.filter(r=>r.error);
+    title='Import AMS Entries';btnLabel=rows.length?`Import ${valid.length} ${valid.length===1?'Entry':'Entries'}`:'Preview';
+    body=`<div class="space-y-3">
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-gray-500">Paste CSV content below. First row can be headers.</p>
+        <button data-act="download-ams-template" class="text-xs text-[#0e7490] font-semibold hover:underline">⬇ Download Template</button>
+      </div>
+      <textarea id="bulk-csv" rows="7" placeholder="date_raised,due_date,raised_by,module,project,description,type,query_level,entry_status,mode_of_support,hours&#10;2026-07-15,,Yashwanth K,Payroll,HDFC Bank,Issue with payroll run,Bug Fix,L2 - Medium,Open,Online / Remote,2.5" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(m.csvText||'')}</textarea>
+      <button data-act="preview-ams-csv" class="w-full text-sm font-medium bg-gray-50 hover:bg-[#0e7490]/10 hover:text-[#0e7490] text-gray-700 border border-gray-200 rounded-xl py-2 transition">Preview Rows</button>
+      ${rows.length?`<div class="text-xs font-semibold text-gray-700">${rows.length} rows · <span class="text-green-600">${valid.length} valid</span>${errs.length?` · <span class="text-rose-600">${errs.length} errors</span>`:''}</div>
+      <div class="max-h-40 overflow-y-auto space-y-1">${rows.map(r=>`<div class="text-xs px-2 py-1 rounded-lg ${r.error?'bg-rose-50':'bg-green-50'} flex gap-2"><span class="${r.error?'text-rose-500':'text-green-600'}">${r.error?'✕':'✓'}</span><span>${esc(r.description||r.dateRaised)}${r.error?` — ${esc(r.error)}`:''}</span></div>`).join('')}</div>`:''}
+    </div>`;
+  } else if(m.type==='import-integrations'){
+    const rows=m.csvRows||[];const valid=rows.filter(r=>!r.error);const errs=rows.filter(r=>r.error);
+    title='Import Integrations';btnLabel=rows.length?`Import ${valid.length} ${valid.length===1?'Integration':'Integrations'}`:'Preview';
+    body=`<div class="space-y-3">
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-gray-500">Paste CSV content below.</p>
+        <button data-act="download-integ-template" class="text-xs text-[#0e7490] font-semibold hover:underline">⬇ Download Template</button>
+      </div>
+      <textarea id="bulk-csv" rows="6" placeholder="name,status,assignee,due_date,description,next_action&#10;SAP Payroll Sync,In Progress,Yashwanth K,2026-08-15,SAP to Darwinbox payroll integration,Finish API mapping" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(m.csvText||'')}</textarea>
+      <button data-act="preview-integ-csv" class="w-full text-sm font-medium bg-gray-50 hover:bg-[#0e7490]/10 hover:text-[#0e7490] text-gray-700 border border-gray-200 rounded-xl py-2 transition">Preview Rows</button>
+      ${rows.length?`<div class="text-xs font-semibold text-gray-700">${rows.length} rows · <span class="text-green-600">${valid.length} valid</span>${errs.length?` · <span class="text-rose-600">${errs.length} errors</span>`:''}</div>
+      <div class="max-h-40 overflow-y-auto space-y-1">${rows.map(r=>`<div class="text-xs px-2 py-1 rounded-lg ${r.error?'bg-rose-50':'bg-green-50'} flex gap-2"><span class="${r.error?'text-rose-500':'text-green-600'}">${r.error?'✕':'✓'}</span><span>${esc(r.name)}${r.error?` — ${esc(r.error)}`:` · ${esc(r.status)}`}</span></div>`).join('')}</div>`:''}
+    </div>`;
+  } else if(m.type==='add-milestone'||m.type==='edit-milestone'){
+    const isEdit=m.type==='edit-milestone';
+    title=isEdit?'Edit Milestone':'Add Milestone';btnLabel=isEdit?'Save Changes':'Add Milestone';
+    body=`<div class="space-y-3">
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Milestone Name *</label><input id="ms-name" type="text" value="${esc(m.msName||'')}" placeholder="e.g. API spec agreed, Signoff received" autocomplete="off" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="block text-xs font-medium text-gray-500 mb-1">Due Date</label><input id="ms-due" type="date" value="${esc(m.msDue||'')}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+        <div><label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
+          <select id="ms-status" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">
+            ${MILESTONE_STATUSES.map(s=>`<option${s===(m.msStatus||'Pending')?' selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Owner</label>${assigneeSelect('ms-owner',m.msOwner||'')}</div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Notes</label><input id="ms-notes" type="text" value="${esc(m.msNotes||'')}" placeholder="Any context or dependencies" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+    </div>`;
+  } else if(m.type==='portfolio-export'){
+    title='Portfolio Export';btnLabel='Generate PDF';
+    const implC=S.clients.filter(c=>c.modules!==undefined);
+    const integC=S.clients.filter(c=>(c.integrations||[]).length>0);
+    const amsC=S.clients.filter(c=>c.workLog!==undefined);
+    const allC=[...new Set([...implC,...integC,...amsC])];
+    body=`<div class="space-y-4">
+      <div>
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Select Clients</div>
+        <div class="max-h-48 overflow-y-auto space-y-1.5">
+          ${allC.map(c=>`<label class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 cursor-pointer">
+            <input type="checkbox" data-act="portfolio-client-toggle" data-cid="${c.id}" class="rounded" checked/>
+            <span class="text-sm text-gray-800">${esc(c.name)}</span>
+            <span class="text-xs text-gray-400 ml-auto">${[c.modules&&'Impl',((c.integrations||[]).length>0)&&'Integ',c.workLog&&'AMS'].filter(Boolean).join(' · ')}</span>
+          </label>`).join('')}
+        </div>
+      </div>
+      <div>
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Include Sections</div>
+        <div class="flex gap-3">
+          ${[['impl','Implementations'],['integrations','Integrations'],['ams','AMS']].map(([k,l])=>`<label class="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer"><input type="checkbox" data-act="portfolio-section-toggle" data-section="${k}" class="rounded" checked/>${l}</label>`).join('')}
+        </div>
+      </div>
+      <p class="text-xs text-gray-400">Sections are skipped if a client has no data in that section.</p>
+    </div>`;
   } else if(m.type==='confirm'){
     title='Confirm';btnLabel='Delete';btnCls='bg-rose-600 hover:bg-rose-700';
     body=`<p class="text-sm text-gray-600">${esc(m.msg||'Are you sure? This cannot be undone.')}</p>`;
@@ -1466,7 +1642,7 @@ function renderModal(){
   const busy=!!m.busy;
   const busyLabel=m.type==='confirm'?'Deleting…':'Saving…';
   return`<div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 fade" id="modal-overlay">
-  <div class="${m.type==='add-ams-entry'||m.type==='edit-ams-entry'?'max-w-2xl':'max-w-md'} bg-white rounded-2xl shadow-2xl w-full p-6 modal-pop overflow-y-auto max-h-[90vh]">
+  <div class="${['add-ams-entry','edit-ams-entry','bulk-import-users','portfolio-export','import-ams-entries','import-integrations'].includes(m.type)?'max-w-2xl':'max-w-md'} bg-white rounded-2xl shadow-2xl w-full p-6 modal-pop overflow-y-auto max-h-[90vh]">
     <div class="flex items-center justify-between mb-5">
       <h2 class="font-bold text-gray-900">${esc(title)}</h2>
       <button data-act="modal-close" ${busy?'disabled class="text-gray-200 text-xl leading-none cursor-not-allowed"':'class="text-gray-400 hover:text-gray-600 text-xl leading-none"'}>✕</button>
@@ -1950,6 +2126,93 @@ function exportAmsInvoicePdf(clientId){
   }catch(e){console.error(e);showToast('PDF failed: '+e.message,'error');}
 }
 
+function exportExcel(type, clientId){
+  if(typeof XLSX==='undefined'){showToast('Excel export not available','error');return;}
+  const c=S.clients.find(x=>x.id===clientId);if(!c)return;
+  let wb,ws,data,headers,filename;
+  if(type==='integrations'){
+    headers=['Integration','Status','Assignee','Due Date','Description','Next Action','Last Update'];
+    data=(c.integrations||[]).map(i=>[i.name||'',i.status||'',i.assignee||'',i.dueDate?fmtDate(i.dueDate):'',i.description||'',i.nextAction||'',(i.timeline||[])[0]?.date?fmtDate((i.timeline||[])[0].date):'']);
+    filename=`${c.name}_Integrations.xlsx`;
+  }else if(type==='ams'){
+    headers=['#','Date Raised','Due Date','Raised By','Module','Project','Description','Type','Query Level','Entry Status','RAG','Mode','Hours'];
+    data=(c.workLog||[]).map((e,i)=>[i+1,fmtDate(entryDate(e)),e.dueDate?fmtDate(e.dueDate):'',entryRaisedBy(e),e.module||'',e.project||'',e.description||'',entryType(e),e.queryLevel||'',e.entryStatus||'Open',e.ragStatus||'',e.modeOfSupport||'',Number(e.hours||0).toFixed(1)]);
+    filename=`${c.name}_AMS_Entries.xlsx`;
+  }else if(type==='impl'){
+    headers=['Module','Phase','Status','Assignee','Start Date','Target Date','Current Activity','Next Action','Updates Count'];
+    data=(c.modules||[]).flatMap(m=>(m.phases||[]).map(ph=>[m.name,ph.name,ph.status||'',ph.assignee||'',ph.startDate?fmtDate(ph.startDate):'',ph.targetDate?fmtDate(ph.targetDate):'',ph.currentActivity||'',ph.nextAction||'',(ph.updates||[]).length]));
+    filename=`${c.name}_Implementation.xlsx`;
+  }else if(type==='milestones'){
+    headers=['Integration','Milestone','Status','Due Date','Owner','Notes'];
+    data=(c.integrations||[]).flatMap(i=>(i.milestones||[]).map(ms=>[i.name,ms.name,ms.status,ms.dueDate?fmtDate(ms.dueDate):'',ms.owner||'',ms.notes||'']));
+    filename=`${c.name}_Milestones.xlsx`;
+  }
+  ws=XLSX.utils.aoa_to_sheet([headers,...(data||[])]);
+  // Bold header row
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  for(let C=range.s.c;C<=range.e.c;C++){const cell=XLSX.utils.encode_cell({r:0,c:C});if(ws[cell])ws[cell].s={font:{bold:true}};}
+  wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Data');
+  XLSX.writeFile(wb,filename);showToast('Excel downloaded ✓');
+}
+
+function exportConsolidatedPdf(clientIds, sections){
+  if(!clientIds.length){showToast('Select at least one client','error');return;}
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',format:'a4',unit:'mm'});
+  const W=297,H=210,NV=[13,61,79],MG=[181,23,158];
+  // Cover
+  doc.setFillColor(...NV);doc.rect(0,0,W,H,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(30);doc.setTextColor(255,255,255);
+  doc.text('Portfolio Status Report',W/2,H/2-14,{align:'center'});
+  doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(125,211,232);
+  doc.text(`${clientIds.length} client${clientIds.length!==1?'s':''} · ${new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'})}`,W/2,H/2+2,{align:'center'});
+  doc.setFillColor(...MG);doc.rect(W/2-14,H/2+10,28,1,'F');
+  doc.setFontSize(10);doc.setTextColor(100,116,139);doc.text('Prepared by Kognoz',W/2,H-8,{align:'center'});
+
+  const drawHdr=(title,clientName)=>{doc.setFillColor(...NV);doc.rect(0,0,W,14,'F');doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text(title,10,9.5);doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(clientName,W-10,9.5,{align:'right'});};
+
+  clientIds.forEach(cid=>{
+    const c=S.clients.find(x=>x.id===cid);if(!c)return;
+    if(sections.includes('integrations')&&(c.integrations||[]).length){
+      doc.addPage();drawHdr('Integrations',c.name);
+      doc.autoTable({startY:18,margin:{top:18,left:10,right:10},head:[['Integration','Status','Assignee','Due Date','Latest Update']],
+        body:(c.integrations||[]).map(i=>[i.name,i.status,i.assignee||'—',i.dueDate?fmtDate(i.dueDate):'—',(i.timeline||[])[0]?.update?.slice(0,80)||'—']),
+        headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:9},styles:{fontSize:8,cellPadding:3},
+        didParseCell:d=>{if(d.section==='body'&&d.column.index===1){const rgb=SRGB[d.cell.raw];if(rgb){d.cell.styles.textColor=rgb;d.cell.styles.fontStyle='bold';}}},
+        didDrawPage:()=>drawHdr('Integrations',c.name)});
+    }
+    if(sections.includes('impl')&&c.modules?.length){
+      doc.addPage();drawHdr('Implementations',c.name);
+      const rag=implAutoRag(c);const pr=implProgress(c);
+      doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(31,41,55);
+      doc.text(`RAG: ${rag||'—'} · ${pr.completed}/${pr.total} phases complete (${pr.pct}%)`,10,19);
+      doc.autoTable({startY:24,margin:{top:24,left:10,right:10},head:[['Module',...PHASES]],
+        body:(c.modules||[]).map(m=>{const row=[m.name];PHASES.forEach(ph=>{const p=(m.phases||[]).find(x=>x.name===ph)||{status:'Not Started'};row.push(p.status);});return row;}),
+        headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:7.5},
+        styles:{fontSize:7,cellPadding:2.5,halign:'center'},columnStyles:{0:{halign:'left',fontStyle:'bold',cellWidth:38}},
+        didParseCell:d=>{if(d.section==='body'&&d.column.index>0){const rgb=SRGB[d.cell.raw];if(rgb){d.cell.styles.textColor=rgb;d.cell.styles.fontStyle='bold';}}},
+        didDrawPage:()=>drawHdr('Implementations',c.name)});
+    }
+    if(sections.includes('ams')&&c.workLog?.length){
+      doc.addPage();drawHdr('AMS & Support',c.name);
+      const t=amsTotals(c,S.amsFrom,S.amsTo);
+      doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(31,41,55);
+      doc.text(`Total Hours: ${t.totalHours.toFixed(1)}h · Open entries: ${(c.workLog||[]).filter(e=>e.entryStatus!=='Closed').length}`,10,19);
+      doc.autoTable({startY:24,margin:{top:24,left:10,right:10},
+        head:[['#','Date','Description','Type','Level','Status','Hours']],
+        body:(c.workLog||[]).sort((a,b)=>entryDate(b).localeCompare(entryDate(a))).map((e,i)=>[i+1,fmtDate(entryDate(e)),(e.description||'').slice(0,50),entryType(e),e.queryLevel||'',e.entryStatus||'Open',Number(e.hours||0).toFixed(1)]),
+        headStyles:{fillColor:NV,textColor:[255,255,255],fontStyle:'bold',fontSize:9},styles:{fontSize:7.5,cellPadding:2.5},
+        didDrawPage:()=>drawHdr('AMS & Support',c.name)});
+    }
+  });
+  // Thank you
+  doc.addPage();doc.setFillColor(...NV);doc.rect(0,0,W,H,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(36);doc.setTextColor(255,255,255);doc.text('Thank You',W/2,H/2-8,{align:'center'});
+  doc.setFillColor(...MG);doc.rect(W/2-10,H/2,20,1,'F');
+  doc.setFont('helvetica','normal');doc.setFontSize(13);doc.setTextColor(125,211,232);doc.text('Kognoz · HR Transformation & Consulting',W/2,H/2+10,{align:'center'});
+  doc.save(`Portfolio_Report_${new Date().toISOString().slice(0,10)}.pdf`);showToast('Portfolio PDF downloaded ✓');
+}
+
 // ─── EVENTS ───────────────────────────────────────────────────────
 document.addEventListener('click',async e=>{
   if(e.target.id==='modal-overlay'&&e.target===e.currentTarget){if(S.modal?.busy)return;S.modal=null;render();return;}
@@ -2083,6 +2346,16 @@ document.addEventListener('click',async e=>{
     ph.targetDate=document.getElementById('ip-target')?.value||'';
     ph.currentActivity=document.getElementById('ip-activity')?.value?.trim()||'';
     ph.nextAction=document.getElementById('ip-next')?.value?.trim()||'';
+    // Signoff enforcement
+    const isSignoff=SIGNOFF_PHASES.includes(phaseName);
+    const hasAttachment=(ph.updates||[]).some(u=>u.attachment?.url);
+    if(isSignoff&&ph.status==='Completed'&&!hasAttachment){
+      showToast(`${phaseName} requires a document attached to an update. Add a SharePoint link before marking complete.`,'error');
+      return;
+    }
+    if(!isSignoff&&ph.status==='Completed'&&!hasAttachment){
+      showToast('Tip: Consider attaching a reference document to this phase update.','warn');
+    }
     if(idx>=0)mod.phases[idx]=ph;else mod.phases.push(ph);
     setBtnBusy(el,'Saving…');
     try{await saveClients(`Update ${phaseName}: ${mod.name}`);showToast('Saved ✓');navigate('impl-phase-detail',{clientId:cid,moduleId:mid,phase:phaseName});}
@@ -2125,6 +2398,55 @@ document.addEventListener('click',async e=>{
     const eid=el.dataset.eid;
     if(S.expandedAmsHistory.has(eid))S.expandedAmsHistory.delete(eid);else S.expandedAmsHistory.add(eid);
     render();return;
+  }
+  // ── Milestone handlers ──
+  if(act==='add-milestone-btn'){
+    if(!can('edit'))return;
+    S.modal={type:'add-milestone',cid:el.dataset.cid,iid:el.dataset.iid};render();setTimeout(()=>document.getElementById('ms-name')?.focus(),50);return;
+  }
+  if(act==='edit-milestone-btn'){
+    if(!can('edit'))return;
+    const c=S.clients.find(x=>x.id===el.dataset.cid);const i=c?.integrations.find(x=>x.id===el.dataset.iid);const ms=(i?.milestones||[]).find(x=>x.id===el.dataset.mid);if(!ms)return;
+    S.modal={type:'edit-milestone',cid:el.dataset.cid,iid:el.dataset.iid,mid:ms.id,msName:ms.name,msDue:ms.dueDate||'',msStatus:ms.status,msOwner:ms.owner||'',msNotes:ms.notes||''};render();setTimeout(()=>document.getElementById('ms-name')?.focus(),50);return;
+  }
+  if(act==='delete-milestone'){
+    if(!can('admin'))return;
+    const c=S.clients.find(x=>x.id===el.dataset.cid);const i=c?.integrations.find(x=>x.id===el.dataset.iid);const ms=(i?.milestones||[]).find(x=>x.id===el.dataset.mid);if(!ms)return;
+    S.modal={type:'confirm',msg:`Delete milestone "${ms.name}"? Cannot be undone.`,_act:'delete-milestone',_cid:el.dataset.cid,_iid:el.dataset.iid,_mid:ms.id};render();return;
+  }
+  // ── Excel export handlers ──
+  if(act==='exp-excel'){setBtnBusy(el,'Exporting…');try{exportExcel(el.dataset.etype,el.dataset.cid);}finally{clearBtnBusy(el);}return;}
+  // ── Bulk CSV import handlers ──
+  if(act==='open-import-ams'){
+    S.modal={type:'import-ams-entries',cid:el.dataset.cid};render();return;
+  }
+  if(act==='open-import-integ'){
+    S.modal={type:'import-integrations',cid:el.dataset.cid};render();return;
+  }
+  if(act==='download-ams-template'){
+    const csv='date_raised,due_date,raised_by,module,project,description,type,query_level,entry_status,mode_of_support,hours\n2026-07-15,,Yashwanth K,Payroll,HDFC Bank,Issue with payroll run,Bug Fix,L2 - Medium,Open,Online / Remote,2.5\n';
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='ams_entries_template.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);return;
+  }
+  if(act==='download-integ-template'){
+    const csv='name,status,assignee,due_date,description,next_action\nSAP Payroll Sync,In Progress,Yashwanth K,2026-08-15,SAP to Darwinbox payroll integration,Finish API mapping\n';
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='integrations_template.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);return;
+  }
+  if(act==='preview-ams-csv'){
+    const csv=document.getElementById('bulk-csv')?.value||'';
+    if(!csv.trim()){showToast('Paste CSV first','error');return;}
+    const rows=parseAmsEntriesCsv(csv);
+    S.modal={...S.modal,csvRows:rows,csvText:csv};render();return;
+  }
+  if(act==='preview-integ-csv'){
+    const csv=document.getElementById('bulk-csv')?.value||'';
+    if(!csv.trim()){showToast('Paste CSV first','error');return;}
+    const c=S.clients.find(x=>x.id===S.modal?.cid);
+    const rows=parseIntegrationsCsv(csv,c?.integrations||[]);
+    S.modal={...S.modal,csvRows:rows,csvText:csv};render();return;
+  }
+  // ── Portfolio export ──
+  if(act==='portfolio-export'){
+    S.modal={type:'portfolio-export'};render();return;
   }
   if(act==='download-user-template'){
     const csv='username,full_name,role,email,password\npriya.s,Priya S,editor,priya@kognoz.in,Kognoz@123\nrahul.m,Rahul M,editor,rahul@kognoz.in,Kognoz@123\n';
@@ -2238,7 +2560,7 @@ document.addEventListener('click',async e=>{
   }
   if(act==='edit-ams-client'){
     if(!can('admin'))return;const c=S.clients.find(x=>x.id===el.dataset.id);if(!c)return;
-    S.modal={type:'edit-ams-client',cid:c.id,description:c.description,manDayRate:c.manDayRate,totalAvailableHours:c.totalAvailableHours};render();return;
+    S.modal={type:'edit-ams-client',cid:c.id,description:c.description,manDayRate:c.manDayRate,totalAvailableHours:c.totalAvailableHours,currency:c.currency||'INR'};render();return;
   }
   if(act==='open-profile'){
     S.modal={type:'my-profile'};render();setTimeout(()=>document.getElementById('pr-curr')?.focus(),50);return;
@@ -2334,6 +2656,51 @@ document.addEventListener('click',async e=>{
         try{await saveClients(`Delete entry: ${c.name}`);S.modal=null;showToast('Entry deleted');navigate('ams-client-detail',{clientId:m._cid});}
         catch(err){c.workLog.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
       }
+      else if(m._act==='delete-milestone'){
+        const c=S.clients.find(x=>x.id===m._cid);const i=c?.integrations.find(x=>x.id===m._iid);if(!i){S.modal=null;render();return;}
+        const idx=(i.milestones||[]).findIndex(x=>x.id===m._mid);if(idx<0){S.modal=null;render();return;}
+        const[rem]=(i.milestones||[]).splice(idx,1);
+        try{await saveClients(`Delete milestone: ${rem.name}`);S.modal=null;showToast('Milestone deleted');navigate('integ-detail',{clientId:m._cid,integId:m._iid});}
+        catch(err){i.milestones.splice(idx,0,rem);S.modal=null;showToast('Failed: '+err.message,'error');render();}
+      }
+    } else if(m.type==='add-milestone'||m.type==='edit-milestone'){
+      const name=document.getElementById('ms-name')?.value.trim();
+      if(!name){showToast('Milestone name required','error');return;}
+      const c=S.clients.find(x=>x.id===m.cid);const i=c?.integrations.find(x=>x.id===m.iid);if(!i)return;
+      if(!i.milestones)i.milestones=[];
+      const msObj={id:m.mid||uid(),name,dueDate:document.getElementById('ms-due')?.value||'',status:document.getElementById('ms-status')?.value||'Pending',owner:document.getElementById('ms-owner')?.value||'',notes:document.getElementById('ms-notes')?.value.trim()||''};
+      if(m.type==='edit-milestone'){
+        const idx=i.milestones.findIndex(x=>x.id===m.mid);if(idx>=0)i.milestones[idx]=msObj;
+      }else{i.milestones.push(msObj);}
+      S.modal={...m,busy:true};render();
+      try{await saveClients(`${m.type==='edit-milestone'?'Edit':'Add'} milestone: ${name}`);S.modal=null;showToast(`Milestone ${m.type==='edit-milestone'?'updated':'added'} ✓`);navigate('integ-detail',{clientId:m.cid,integId:m.iid});}
+      catch(err){if(m.type==='add-milestone')i.milestones.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
+    } else if(m.type==='import-ams-entries'){
+      const valid=(m.csvRows||[]).filter(r=>!r.error);
+      if(!valid.length){showToast('No valid rows to import','error');return;}
+      const c=S.clients.find(x=>x.id===m.cid);if(!c)return;
+      if(!c.workLog)c.workLog=[];
+      const prev=JSON.parse(JSON.stringify(c.workLog));
+      const newEntries=valid.map(r=>({id:uid(),...r,loggedAt:new Date().toISOString()}));
+      c.workLog.push(...newEntries);S.modal={...m,busy:true};render();
+      try{await saveClients(`Import ${newEntries.length} AMS entries: ${c.name}`);S.modal=null;showToast(`${newEntries.length} entr${newEntries.length===1?'y':'ies'} imported ✓`);navigate('ams-client-detail',{clientId:m.cid});}
+      catch(err){c.workLog=prev;S.modal=null;showToast('Import failed: '+err.message,'error');render();}
+    } else if(m.type==='import-integrations'){
+      const valid=(m.csvRows||[]).filter(r=>!r.error);
+      if(!valid.length){showToast('No valid rows to import','error');return;}
+      const c=S.clients.find(x=>x.id===m.cid);if(!c)return;
+      const prev=JSON.parse(JSON.stringify(c.integrations));
+      const newIntegs=valid.map(r=>({id:uid(),name:r.name,status:r.status,assignee:r.assignee,dueDate:r.dueDate,description:r.description,nextAction:r.nextAction,timeline:[],createdAt:new Date().toISOString()}));
+      c.integrations.push(...newIntegs);S.modal={...m,busy:true};render();
+      try{await saveClients(`Import ${newIntegs.length} integrations: ${c.name}`);S.modal=null;showToast(`${newIntegs.length} integration${newIntegs.length===1?'':'s'} imported ✓`);navigate('client-detail',{clientId:m.cid});}
+      catch(err){c.integrations=prev;S.modal=null;showToast('Import failed: '+err.message,'error');render();}
+    } else if(m.type==='portfolio-export'){
+      const selected=[...document.querySelectorAll('[data-act="portfolio-client-toggle"]:checked')].map(el=>el.dataset.cid);
+      const sections=[...document.querySelectorAll('[data-act="portfolio-section-toggle"]:checked')].map(el=>el.dataset.section);
+      if(!selected.length){showToast('Select at least one client','error');return;}
+      if(!sections.length){showToast('Select at least one section','error');return;}
+      S.modal=null;render();
+      exportConsolidatedPdf(selected,sections);
     } else if(m.type==='add-client'){
       const name=document.getElementById('m1')?.value.trim(),desc=document.getElementById('m2')?.value.trim();
       if(!name){showToast('Name required','error');return;}
@@ -2461,9 +2828,10 @@ document.addEventListener('click',async e=>{
       const rate=rateRaw?parseFloat(rateRaw):undefined;
       const availRaw=document.getElementById('m4')?.value;
       const avail=availRaw?parseFloat(availRaw):undefined;
+      const currency=document.getElementById('m5')?.value||'INR';
       if(existingId){
         const c=S.clients.find(x=>x.id===existingId);if(!c)return;
-        if(rate)c.manDayRate=rate;c.workLog=c.workLog||[];if(avail!==undefined)c.totalAvailableHours=avail;
+        if(rate)c.manDayRate=rate;c.workLog=c.workLog||[];c.currency=currency;if(avail!==undefined)c.totalAvailableHours=avail;
         S.modal={...m,busy:true};render();
         try{await saveClients(`Enable AMS: ${c.name}`);S.modal=null;showToast(`${c.name} added to AMS`);render();}
         catch(err){delete c.manDayRate;delete c.totalAvailableHours;S.modal=null;showToast('Failed: '+err.message,'error');render();}
@@ -2472,7 +2840,7 @@ document.addEventListener('click',async e=>{
         if(!name){showToast('Pick a client above or enter a new name','error');return;}
         if(S.clients.find(x=>x.name.toLowerCase()===name.toLowerCase())){showToast(`"${name}" already exists — select it above instead`,'error');return;}
         const desc=document.getElementById('m2')?.value.trim();
-        const nc={id:uid(),name,description:desc||'',createdAt:new Date().toISOString(),integrations:[],workLog:[]};
+        const nc={id:uid(),name,description:desc||'',createdAt:new Date().toISOString(),integrations:[],workLog:[],currency};
         if(rate)nc.manDayRate=rate;if(avail!==undefined)nc.totalAvailableHours=avail;
         S.clients.push(nc);S.modal={...m,busy:true};render();
         try{await saveClients(`Add ${name}`);S.modal=null;showToast(`${name} added`);render();}
@@ -2483,8 +2851,9 @@ document.addEventListener('click',async e=>{
       const rateRaw=document.getElementById('m2')?.value;
       const desc=document.getElementById('m1')?.value.trim();
       const availRaw=document.getElementById('m3')?.value;
-      const snapshot={description:c.description,manDayRate:c.manDayRate,totalAvailableHours:c.totalAvailableHours};
-      c.description=desc||'';
+      const currency=document.getElementById('m4')?.value||'INR';
+      const snapshot={description:c.description,manDayRate:c.manDayRate,totalAvailableHours:c.totalAvailableHours,currency:c.currency};
+      c.description=desc||'';c.currency=currency;
       if(rateRaw){c.manDayRate=parseFloat(rateRaw);}else{delete c.manDayRate;}
       if(availRaw){c.totalAvailableHours=parseFloat(availRaw);}else{delete c.totalAvailableHours;}
       S.modal={...m,busy:true};render();
