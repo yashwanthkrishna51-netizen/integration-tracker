@@ -863,6 +863,22 @@ function amsStatusBadge(s){const m={'Open':'bg-blue-50 text-blue-700 border-blue
 function entryDate(e){return e.dateRaised||e.date||''}
 function entryType(e){return e.type||e.category||'—'}
 function entryRaisedBy(e){return e.raisedBy||e.loggedBy||'—'}
+const RAG_BADGE={Red:'bg-rose-100 text-rose-700 border-rose-200',Amber:'bg-amber-100 text-amber-700 border-amber-200',Green:'bg-green-100 text-green-700 border-green-200'};
+const RAG_DOT={Red:'bg-rose-500',Amber:'bg-amber-500',Green:'bg-green-500'};
+function ragBadge(rag,size='sm'){if(!rag)return'<span class="text-gray-300 text-xs">—</span>';return`<span class="text-${size} font-semibold border px-1.5 py-0.5 rounded-lg ${RAG_BADGE[rag]||''}">${rag==='Red'?'🔴':rag==='Amber'?'🟡':'🟢'} ${rag}</span>`;}
+function amsClientRag(client){
+  const entries=client.workLog||[];
+  const open=entries.filter(e=>(e.entryStatus||'Open')!=='Closed');
+  if(!entries.length)return null;
+  if(open.some(e=>e.ragStatus==='Red'))return'Red';
+  if(open.some(e=>e.dueDate&&e.dueDate<todayStr()))return'Red';
+  if(open.some(e=>e.ragStatus==='Amber'))return'Amber';
+  const threeDays=new Date();threeDays.setDate(threeDays.getDate()+3);const soonStr=threeDays.toISOString().slice(0,10);
+  if(open.some(e=>e.dueDate&&e.dueDate<=soonStr&&e.dueDate>=todayStr()))return'Amber';
+  if(open.length===0&&entries.length>0)return'Green';
+  if(open.every(e=>!e.ragStatus||e.ragStatus==='Green'))return'Green';
+  return'Green';
+}
 function amsTotals(client,fromDate,toDate){
   const allLog=client.workLog||[];
   const log=allLog.filter(e=>(!fromDate||entryDate(e)>=fromDate)&&(!toDate||entryDate(e)<=toDate));
@@ -894,7 +910,10 @@ function renderAmsClientList(){
     ${(()=>{const amsClients=S.clients.filter(c=>c.workLog!==undefined);return amsClients.length?amsClients.map((c,idx)=>{
       const t=amsTotals(c,'','');
       return`<div data-act="open-ams-client" data-id="${c.id}" style="animation-delay:${Math.min(idx*35,400)}ms" class="row-in card-hover bg-white rounded-2xl border border-gray-100 p-5 hover:border-[#0e7490]/30 transition cursor-pointer">
-        <div class="font-semibold text-gray-900 mb-1" title="${esc(c.name)}">${esc(c.name)}</div>
+        <div class="flex items-start justify-between mb-1">
+          <div class="font-semibold text-gray-900" title="${esc(c.name)}">${esc(c.name)}</div>
+          ${ragBadge(amsClientRag(c))}
+        </div>
         ${c.description?`<div class="text-xs text-gray-400 mb-3 truncate" title="${esc(c.description)}">${esc(c.description)}</div>`:''}
         <div class="text-xs text-gray-500">${t.totalHours.toFixed(1)} hours logged total</div>
         ${can('admin')&&c.manDayRate?`<div class="text-xs text-gray-400 mt-1">₹${c.manDayRate.toLocaleString('en-IN')}/day rate</div>`:can('admin')?`<div class="text-xs text-gray-400 mt-1">Retainer (no rate)</div>`:''}
@@ -910,14 +929,17 @@ function renderAmsClientDetail(clientId){
   if(!c)return`<div class="p-8 text-gray-400">Client not found</div>`;
   const t=amsTotals(c,S.amsFrom,S.amsTo);
   const sorted=[...t.log].sort((a,b)=>entryDate(b).localeCompare(entryDate(a)));
-  const COLS=['#','Date Raised','Raised / Attended By','Module / Meeting','Project','Description','Type','Query Level','Dependencies','Status','Solution Discussed','Mode of Support','Hours'];
+  const COLS=['#','Date Raised','Due Date','Raised / Attended By','Module / Meeting','Project','Description','Type','Query Level','Dependencies','Status','RAG','Solution Discussed','Mode of Support','Hours'];
   return`<div class="max-w-full mx-auto px-6 py-7 fade">
   <div class="flex items-center gap-2 text-sm text-gray-400 mb-4">
     <button data-act="nav-ams" class="hover:text-[#0e7490]">AMS</button><span>›</span>
     <span class="text-gray-900 font-medium">${esc(c.name)}</span>
   </div>
   <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
-    <div><h1 class="text-xl font-bold text-gray-900">${esc(c.name)}</h1>${c.description?`<p class="text-sm text-gray-400 mt-0.5">${esc(c.description)}</p>`:''}</div>
+    <div>
+      <div class="flex items-center gap-3 mb-0.5"><h1 class="text-xl font-bold text-gray-900">${esc(c.name)}</h1>${(()=>{const r=amsClientRag(c);return r?ragBadge(r):''})()}</div>
+      ${c.description?`<p class="text-sm text-gray-400 mt-0.5">${esc(c.description)}</p>`:''}
+    </div>
     ${can('admin')?`<div class="flex gap-2 flex-wrap">
       <button data-act="edit-ams-client" data-id="${c.id}" class="text-gray-400 hover:text-[#0e7490] text-xs px-2 border border-gray-200 rounded-lg py-1.5">Edit Client</button>
       <button data-act="delete-ams-client" data-id="${c.id}" class="text-rose-400 hover:text-rose-600 text-xs px-2">Delete Client</button>
@@ -954,7 +976,7 @@ function renderAmsClientDetail(clientId){
     <div class="bg-gray-50 rounded-xl p-4 inline-block"><div class="text-2xl font-bold text-gray-700">${t.totalHours.toFixed(1)}</div><div class="text-xs text-gray-500">Total Hours (Retainer)</div></div>
   </div>`:''}
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden overflow-x-auto">
-    <table class="w-full text-sm min-w-[1400px]">
+    <table class="w-full text-sm min-w-[1600px]">
       <thead class="border-b border-gray-100 bg-gray-50 sticky-head"><tr>
         ${COLS.map((h,i)=>`<th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide ${i===0?'w-8 text-center':''}">${h}</th>`).join('')}
         ${can('edit')?`<th class="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>`:''}
@@ -966,6 +988,7 @@ function renderAmsClientDetail(clientId){
           return`<tr class="hover:bg-gray-50/50 transition">
             <td class="px-3 py-2 text-center text-xs text-gray-400 font-medium">${sorted.length-idx}</td>
             <td class="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">${fmtDate(entryDate(e))}</td>
+            <td class="px-3 py-2 text-xs ${e.dueDate&&e.dueDate<todayStr()&&(e.entryStatus||'Open')!=='Closed'?'text-rose-600 font-semibold':'text-gray-600'} whitespace-nowrap">${e.dueDate?fmtDate(e.dueDate):'—'}</td>
             <td class="px-3 py-2 text-gray-700 text-xs">${esc(entryRaisedBy(e))}</td>
             <td class="px-3 py-2 text-gray-700 text-xs">${esc(e.module||'—')}</td>
             <td class="px-3 py-2 text-gray-700 text-xs">${esc(e.project||'—')}</td>
@@ -978,6 +1001,7 @@ function renderAmsClientDetail(clientId){
             <td class="px-3 py-2 text-xs text-gray-600">${esc(e.queryLevel||'—')}</td>
             <td class="px-3 py-2 text-xs text-gray-600 max-w-[120px]">${esc(e.dependencies||'—')}</td>
             <td class="px-3 py-2">${amsStatusBadge(e.entryStatus||'Open')}</td>
+            <td class="px-3 py-2">${e.ragStatus?ragBadge(e.ragStatus):`<span class="text-gray-300 text-xs">—</span>`}</td>
             <td class="px-3 py-2 text-xs text-gray-600 max-w-[160px]">${esc(e.solution||'—')}</td>
             <td class="px-3 py-2 text-xs text-gray-600 whitespace-nowrap">${esc(e.modeOfSupport||'—')}</td>
             <td class="px-3 py-2 text-gray-700 font-medium text-xs text-right">${Number(e.hours||0).toFixed(1)}</td>
@@ -1253,7 +1277,9 @@ function renderAdminUsers(){
             ?`<select data-act="change-role" data-uid="${u.id}" class="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${ROLES.map(r=>`<option${r===u.role?' selected':''}>${r}</option>`).join('')}</select>`
             :`<span class="text-xs px-2 py-0.5 rounded-full font-medium ${u.role==='admin'?'bg-violet-100 text-violet-700':u.role==='editor'?'bg-cyan-100 text-cyan-800':'bg-gray-100 text-gray-600'}">${u.role}</span>`}
           </td>
-          <td class="px-4 py-3">${u.id!==S.user?.id?`<button data-act="delete-user" data-uid="${u.id}" class="text-xs text-rose-400 hover:text-rose-600 font-medium">Delete</button>`:`<span class="text-xs text-gray-300">current user</span>`}</td>
+          <td class="px-4 py-3">${u.id!==S.user?.id
+            ?`<div class="flex gap-3"><button data-act="edit-user" data-uid="${u.id}" class="text-xs text-[#0e7490] hover:text-[#0d3d4f] font-medium">Edit</button><button data-act="delete-user" data-uid="${u.id}" class="text-xs text-rose-400 hover:text-rose-600 font-medium">Delete</button></div>`
+            :`<span class="text-xs text-gray-300">current user</span>`}</td>
         </tr>`).join(''):`<tr><td colspan="5" class="text-center py-8 text-gray-400 text-sm">No users yet</td></tr>`}
       </tbody>
     </table>
@@ -1296,6 +1322,14 @@ function renderModal(){
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Password *</label><input id="m3" type="password" placeholder="••••••••" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Role</label>
         <select id="m4" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${ROLES.map(r=>`<option>${r}</option>`).join('')}</select></div>
+    </div>`;
+  } else if(m.type==='edit-user'){
+    title='Edit User';btnLabel='Save Changes';
+    body=`<div class="space-y-3">
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Username</label><div class="px-3 py-2 bg-gray-50 rounded-xl text-sm text-gray-500 font-mono">${esc(m.username||'')}</div></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Full Name *</label><input id="eu-name" type="text" value="${esc(m.uname||'')}" autocomplete="off" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Email</label><input id="eu-email" type="email" value="${esc(m.email||'')}" autocomplete="off" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">New Password <span class="text-gray-400 font-normal">leave blank to keep current</span></label><input id="eu-pass" type="password" placeholder="••••••••" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
     </div>`;
   } else if(m.type==='bulk-import-users'){
     title='Import Users from CSV';
@@ -1359,15 +1393,23 @@ function renderModal(){
     const inp=(id,type,val='',ph='',extra='')=>`<input id="${id}" type="${type}" value="${esc(val)}" placeholder="${ph}" ${extra} class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`;
     const sel=(id,opts,cur='')=>`<select id="${id}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${opts.map(o=>`<option${o===cur?' selected':''}>${o}</option>`).join('')}</select>`;
     const ta=(id,val='',ph='',rows=2)=>`<textarea id="${id}" rows="${rows}" placeholder="${ph}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(val)}</textarea>`;
+    const ragSel=`<select id="ae-rag" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">
+      <option value=""${!m.ragStatus?' selected':''}>— Not Set —</option>
+      <option value="Green"${m.ragStatus==='Green'?' selected':''}>🟢 Green — On Track</option>
+      <option value="Amber"${m.ragStatus==='Amber'?' selected':''}>🟡 Amber — At Risk</option>
+      <option value="Red"${m.ragStatus==='Red'?' selected':''}>🔴 Red — Blocked</option>
+    </select>`;
     body=`<div class="grid grid-cols-2 gap-3">
       ${fg('ae-date','Date Raised',inp('ae-date','date',m.dateRaised||todayStr()))}
+      ${fg('ae-due','Due Date',inp('ae-due','date',m.dueDate||''),'optional')}
       ${fg('ae-raised','Raised / Attended By',assigneeSelect('ae-raised',m.raisedBy||S.user?.name||''))}
       ${fg('ae-module','Module / Meeting',inp('ae-module','text',m.module||'','e.g. Payroll, UAT Meeting'))}
       ${fg('ae-project','Project',inp('ae-project','text',m.project||'','Project name'))}
-      ${fg('ae-type','Type',sel('ae-type',AMS_TYPES,m.type||AMS_TYPES[0]))}
+      ${fg('ae-type','Type',sel('ae-type',AMS_TYPES,m.etype||AMS_TYPES[0]))}
       ${fg('ae-level','Query Level',sel('ae-level',AMS_QUERY_LEVELS,m.queryLevel||AMS_QUERY_LEVELS[0]))}
       ${fg('ae-mode','Mode of Support',sel('ae-mode',AMS_MODES,m.modeOfSupport||AMS_MODES[0]))}
       ${fg('ae-status','Status',sel('ae-status',AMS_ENTRY_STATUSES,m.entryStatus||'Open'))}
+      ${fg('ae-rag','Entry RAG Status',ragSel,'optional')}
       ${fg('ae-hours','Hours Consumed',inp('ae-hours','number',m.hours||'','e.g. 1.5','step="0.5" min="0"'))}
       ${fg('ae-deps','Any Dependencies',inp('ae-deps','text',m.dependencies||'','Dependencies or blockers'),'optional')}
     </div>
@@ -2126,9 +2168,10 @@ document.addEventListener('click',async e=>{
     const c=S.clients.find(x=>x.id===el.dataset.cid);const e=c?.workLog?.find(x=>x.id===el.dataset.eid);if(!e)return;
     S.modal={type:'edit-ams-entry',cid:el.dataset.cid,eid:el.dataset.eid,
       dateRaised:entryDate(e),raisedBy:entryRaisedBy(e),module:e.module||'',project:e.project||'',
-      description:e.description||'',type:entryType(e),queryLevel:e.queryLevel||AMS_QUERY_LEVELS[0],
+      description:e.description||'',etype:entryType(e),queryLevel:e.queryLevel||AMS_QUERY_LEVELS[0],
       dependencies:e.dependencies||'',entryStatus:e.entryStatus||'Open',solution:e.solution||'',
-      modeOfSupport:e.modeOfSupport||AMS_MODES[0],hours:e.hours||''};
+      modeOfSupport:e.modeOfSupport||AMS_MODES[0],hours:e.hours||'',
+      dueDate:e.dueDate||'',ragStatus:e.ragStatus||''};
     render();setTimeout(()=>document.getElementById('ae-date')?.focus(),50);return;
   }
   if(act==='exp-ams-activity'){if(!can('admin'))return;setBtnBusy(el,'Generating…');try{exportAmsActivityPdf(el.dataset.cid);}finally{clearBtnBusy(el);}return;}
@@ -2154,6 +2197,12 @@ document.addEventListener('click',async e=>{
   if(act==='edit-ams-client'){
     if(!can('admin'))return;const c=S.clients.find(x=>x.id===el.dataset.id);if(!c)return;
     S.modal={type:'edit-ams-client',cid:c.id,description:c.description,manDayRate:c.manDayRate,totalAvailableHours:c.totalAvailableHours};render();return;
+  }
+  if(act==='edit-user'){
+    if(!can('admin'))return;
+    const u=S.users.find(x=>x.id===el.dataset.uid);if(!u)return;
+    S.modal={type:'edit-user',uid:u.id,username:u.username,uname:u.name,email:u.email||''};
+    render();setTimeout(()=>document.getElementById('eu-name')?.focus(),50);return;
   }
   if(act==='delete-user'){
     if(!can('admin'))return;const u=S.users.find(x=>x.id===el.dataset.uid);if(!u||u.id===S.user?.id)return;
@@ -2245,6 +2294,25 @@ document.addEventListener('click',async e=>{
       c.integrations.push(ni);S.modal={...m,busy:true};render();
       try{await saveClients(`Add ${name} to ${c.name}`);S.modal=null;showToast(`${name} added`);render();}
       catch(err){c.integrations.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
+    } else if(m.type==='edit-user'){
+      if(!can('admin'))return;
+      const u=S.users.find(x=>x.id===m.uid);if(!u)return;
+      const newName=document.getElementById('eu-name')?.value.trim();
+      const newEmail=document.getElementById('eu-email')?.value.trim()||'';
+      const newPass=document.getElementById('eu-pass')?.value;
+      if(!newName){showToast('Full name is required','error');return;}
+      const snapshot={name:u.name,email:u.email,passwordHash:u.passwordHash};
+      u.name=newName;u.email=newEmail;
+      S.modal={...m,busy:true};render();
+      if(newPass){u.passwordHash=await sha256(newPass);}
+      try{
+        await saveUsers(`Edit user: ${u.username}`);
+        // refresh dropdown with updated name
+        S.usersForDropdown=S.users.map(x=>({id:x.id,name:x.name||x.username,role:x.role,username:x.username}));
+        // if editing self, update session
+        if(u.id===S.user?.id){S.user.name=newName;persistSession(S.sessionToken,S.user);}
+        S.modal=null;showToast(`${newName} updated ✓`);render();
+      }catch(err){u.name=snapshot.name;u.email=snapshot.email;u.passwordHash=snapshot.passwordHash;S.modal=null;showToast('Failed: '+err.message,'error');render();}
     } else if(m.type==='add-user'){
       const username=document.getElementById('m1')?.value.trim(),name=document.getElementById('m2')?.value.trim(),password=document.getElementById('m3')?.value,role=document.getElementById('m4')?.value,email=document.getElementById('m5')?.value.trim()||'';
       if(!username||!name||!password){showToast('Username, name and password are required','error');return;}
@@ -2329,12 +2397,20 @@ document.addEventListener('click',async e=>{
       const dateRaised=document.getElementById('ae-date')?.value;
       const hours=parseFloat(document.getElementById('ae-hours')?.value);
       if(!dateRaised||!hours||hours<=0){showToast('Date and hours are required','error');return;}
-      const fields={dateRaised,raisedBy:document.getElementById('ae-raised')?.value?.trim()||S.user.name,
-        module:document.getElementById('ae-module')?.value?.trim()||'',project:document.getElementById('ae-project')?.value?.trim()||'',
-        description:document.getElementById('ae-desc')?.value?.trim()||'',type:document.getElementById('ae-type')?.value,
-        queryLevel:document.getElementById('ae-level')?.value,modeOfSupport:document.getElementById('ae-mode')?.value,
-        entryStatus:document.getElementById('ae-status')?.value,dependencies:document.getElementById('ae-deps')?.value?.trim()||'',
-        solution:document.getElementById('ae-solution')?.value?.trim()||'',hours};
+      const fields={dateRaised,
+        dueDate:document.getElementById('ae-due')?.value||'',
+        raisedBy:document.getElementById('ae-raised')?.value||S.user.name,
+        module:document.getElementById('ae-module')?.value?.trim()||'',
+        project:document.getElementById('ae-project')?.value?.trim()||'',
+        description:document.getElementById('ae-desc')?.value?.trim()||'',
+        type:document.getElementById('ae-type')?.value,
+        queryLevel:document.getElementById('ae-level')?.value,
+        modeOfSupport:document.getElementById('ae-mode')?.value,
+        entryStatus:document.getElementById('ae-status')?.value,
+        ragStatus:document.getElementById('ae-rag')?.value||'',
+        dependencies:document.getElementById('ae-deps')?.value?.trim()||'',
+        solution:document.getElementById('ae-solution')?.value?.trim()||'',
+        hours};
       if(!c.workLog)c.workLog=[];
       if(m.type==='add-ams-entry'){
         const entry={id:uid(),...fields,loggedAt:new Date().toISOString()};
