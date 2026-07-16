@@ -100,7 +100,7 @@ html.dark ::-webkit-scrollbar-thumb{background:#2b3744}
 <div id="app"></div>
 <script>
 // ─── STATE ────────────────────────────────────────────────────────
-const S={user:null,clients:[],users:[],shas:{clients:null,users:null},sessionToken:null,view:'login',params:{},adminTab:'integrations',filter:'all',search:'',modal:null,toast:null,sidebarCollapsed:false,sidebarClientsOpen:true,sort:{key:'name',dir:'asc'},editingTimelineId:null,expandedHistory:new Set(),amsFrom:'',amsTo:'',editingAmsEntryId:null,expandedAmsHistory:new Set(),cmdPaletteOpen:false,cmdQuery:'',recentlyViewed:[],darkMode:false,bulkImplMode:false,bulkImplCid:null,bulkSelected:new Set()};
+const S={user:null,clients:[],users:[],usersForDropdown:[],shas:{clients:null,users:null},sessionToken:null,view:'login',params:{},adminTab:'integrations',filter:'all',search:'',modal:null,toast:null,sidebarCollapsed:false,sidebarClientsOpen:false,sort:{key:'name',dir:'asc'},editingTimelineId:null,expandedHistory:new Set(),amsFrom:'',amsTo:'',editingAmsEntryId:null,expandedAmsHistory:new Set(),cmdPaletteOpen:false,cmdQuery:'',recentlyViewed:[],darkMode:false,bulkImplMode:false,bulkImplCid:null,bulkSelected:new Set()};
 
 try{S.sidebarCollapsed=localStorage.getItem('itk_sb_collapsed')==='1';}catch(e){}
 try{const r=localStorage.getItem('itk_recent');if(r)S.recentlyViewed=JSON.parse(r);}catch(e){}
@@ -108,7 +108,7 @@ try{S.darkMode=localStorage.getItem('itk_dark')==='1';}catch(e){}
 if(S.darkMode)document.documentElement.classList.add('dark');
 
 // ─── CONSTANTS — KOGNOZ BRAND ─────────────────────────────────────
-const STATUSES=['Not Started','In Progress','At Risk','On Hold','Completed'];
+const STATUSES=['Not Started','In Progress','At Risk','On Hold — Internal','On Hold — Client','Pending Client','Under Review','Delayed','Cancelled','Completed'];
 const ROLES=['viewer','editor','admin'];
 const PHASES=['BPU','BPU Signoff','CRP','CRP Signoff','UAT','UAT Signoff','Data Migration / Production Migration','Go Live','Hypercare'];
 const AMS_TYPES=['Bug Fix','Enhancement','Config Change','Support Ticket','Reporting','Training','Meeting','Consultation'];
@@ -117,13 +117,38 @@ const AMS_ENTRY_STATUSES=['Open','In Progress','Closed'];
 const AMS_MODES=['Online / Remote','Offline / In-person'];
 const HOURS_PER_DAY=8;
 const TEAL='0e7490',TEAL_DARK='0d3d4f',MAGENTA='b5179e',VIOLET='7c3aed';
-const SBG={'Completed':'bg-green-100 text-green-700 border border-green-200','In Progress':'bg-cyan-100 text-cyan-800 border border-cyan-200','At Risk':'bg-rose-100 text-rose-700 border border-rose-200','On Hold':'bg-violet-100 text-violet-700 border border-violet-200','Not Started':'bg-gray-100 text-gray-500 border border-gray-200'};
-const SDOT={'Completed':'bg-green-500','In Progress':'bg-cyan-600','At Risk':'bg-rose-600','On Hold':'bg-violet-500','Not Started':'bg-gray-400'};
-const SHEX={'Completed':'22c55e','In Progress':'0e7490','At Risk':'be185d','On Hold':'7c3aed','Not Started':'64748b'};
-const SRGB={'Completed':[34,197,94],'In Progress':[14,116,144],'At Risk':[190,24,93],'On Hold':[124,58,237],'Not Started':[100,116,139]};
+const SBG={'Completed':'bg-green-100 text-green-700 border border-green-200','In Progress':'bg-cyan-100 text-cyan-800 border border-cyan-200','At Risk':'bg-rose-100 text-rose-700 border border-rose-200','On Hold — Internal':'bg-violet-100 text-violet-700 border border-violet-200','On Hold — Client':'bg-purple-100 text-purple-700 border border-purple-200','Pending Client':'bg-amber-100 text-amber-700 border border-amber-200','Under Review':'bg-sky-100 text-sky-700 border border-sky-200','Delayed':'bg-orange-100 text-orange-700 border border-orange-200','Cancelled':'bg-gray-200 text-gray-500 border border-gray-300 line-through','Not Started':'bg-gray-100 text-gray-500 border border-gray-200'};
+const SDOT={'Completed':'bg-green-500','In Progress':'bg-cyan-600','At Risk':'bg-rose-600','On Hold — Internal':'bg-violet-500','On Hold — Client':'bg-purple-500','Pending Client':'bg-amber-500','Under Review':'bg-sky-500','Delayed':'bg-orange-500','Cancelled':'bg-gray-400','Not Started':'bg-gray-400'};
+const SHEX={'Completed':'22c55e','In Progress':'0e7490','At Risk':'be185d','On Hold — Internal':'7c3aed','On Hold — Client':'9333ea','Pending Client':'d97706','Under Review':'0284c7','Delayed':'ea580c','Cancelled':'94a3b8','Not Started':'64748b'};
+const SRGB={'Completed':[34,197,94],'In Progress':[14,116,144],'At Risk':[190,24,93],'On Hold — Internal':[124,58,237],'On Hold — Client':[147,51,234],'Pending Client':[217,119,6],'Under Review':[2,132,199],'Delayed':[234,88,12],'Cancelled':[148,163,184],'Not Started':[100,116,139]};
 
 // ─── UTILS ────────────────────────────────────────────────────────
 async function sha256(str){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');}
+function persistSession(token,user){try{localStorage.setItem('itk_sess',btoa(JSON.stringify({token,user})));}catch(e){}}
+function clearSession(){try{localStorage.removeItem('itk_sess');}catch(e){}}
+function restoreSession(){try{const r=localStorage.getItem('itk_sess');return r?JSON.parse(atob(r)):null;}catch(e){return null;}}
+function assigneeSelect(id,currentVal='',extra=''){
+  const users=(S.usersForDropdown||[]).filter(u=>u.role==='admin'||u.role==='editor');
+  if(!users.length)return`<input id="${id}" type="text" value="${esc(currentVal)}" placeholder="Assignee name" ${extra} class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`;
+  return`<select id="${id}" ${extra} class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"><option value="">— Unassigned —</option>${users.map(u=>`<option value="${esc(u.name)}"${u.name===currentVal?' selected':''}>${esc(u.name)}</option>`).join('')}</select>`;
+}
+function parseUsersCsv(text){
+  const lines=text.trim().split('\n').filter(l=>l.trim());
+  if(!lines.length)return[];
+  const hasHeader=lines[0].toLowerCase().includes('username');
+  const dataLines=hasHeader?lines.slice(1):lines;
+  return dataLines.map((line,i)=>{
+    const p=line.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+    const [username,full_name,role,email,password]=p;
+    let error=null;
+    if(!username)error='Username required';
+    else if(!full_name)error='Full name required';
+    else if(!role||!ROLES.includes(role.toLowerCase()))error=`Role must be: ${ROLES.join('/')}`;
+    else if(!password)error='Password required';
+    else if((S.users||[]).find(u=>u.username===username))error=`"${username}" already exists`;
+    return{username,name:full_name,role:role?.toLowerCase(),email:email||'',password,error,row:i+(hasHeader?2:1)};
+  });
+}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function fmtDate(s){if(!s)return'—';try{return new Date(s).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});}catch{return s;}}
@@ -1838,11 +1863,12 @@ document.addEventListener('click',async e=>{
     document.getElementById('app').innerHTML=renderAppSkeleton();
     try{const cl=await apiRead('data/clients.json');S.clients=cl.content;S.shas.clients=cl.sha;}
     catch(err){S.user=null;S.sessionToken=null;render();const e2=document.getElementById('lerr');if(e2){e2.textContent='Loaded user but failed to load clients.';e2.classList.remove('hidden');}return;}
-    if(can('admin')){try{const us=await apiRead('data/users.json');S.users=us.content;S.shas.users=us.sha;}catch(err){S.users=[S.user];}}
-    else{S.users=[S.user];}
+    try{const ul=await apiRead('data/users.json');S.usersForDropdown=ul.content.map(u=>({id:u.id,name:u.name||u.username,role:u.role,username:u.username}));if(can('admin')){S.users=ul.content;S.shas.users=ul.sha;}}
+    catch(err){S.usersForDropdown=[{id:S.user.id,name:S.user.name||S.user.username,role:S.user.role,username:S.user.username}];}
+    persistSession(S.sessionToken,S.user);
     navigate('dashboard');return;
   }
-  if(act==='logout'){S.user=null;S.clients=[];S.users=[];S.shas={clients:null,users:null};S.sessionToken=null;navigate('login');return;}
+  if(act==='logout'){clearSession();S.user=null;S.clients=[];S.users=[];S.usersForDropdown=[];S.shas={clients:null,users:null};S.sessionToken=null;navigate('login');return;}
   if(act==='nav-dashboard'){navigate('dashboard');return;}
   if(act==='nav-clients'){navigate('clients');return;}
   if(act==='nav-impl'){navigate('impl-clients');return;}
@@ -2318,7 +2344,21 @@ document.addEventListener('keydown',e=>{
 });
 
 // ─── INIT ─────────────────────────────────────────────────────────
-render();
+(async function init(){
+  const sess=restoreSession();
+  if(sess&&sess.token&&sess.user){
+    S.sessionToken=sess.token;S.user=sess.user;
+    document.getElementById('app').innerHTML=renderAppSkeleton();
+    try{
+      const cl=await apiRead('data/clients.json');S.clients=cl.content;S.shas.clients=cl.sha;
+      try{const ul=await apiRead('data/users.json');S.usersForDropdown=ul.content.map(u=>({id:u.id,name:u.name||u.username,role:u.role,username:u.username}));if(can('admin')){S.users=ul.content;S.shas.users=ul.sha;}}
+      catch(e){S.usersForDropdown=[{id:S.user.id,name:S.user.name||S.user.username,role:S.user.role,username:S.user.username}];}
+      navigate('dashboard');
+    }catch(e){
+      clearSession();S.user=null;S.sessionToken=null;render();
+    }
+  }else{render();}
+})();
 </script>
 </body>
 </html>
