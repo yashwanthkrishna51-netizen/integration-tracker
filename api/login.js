@@ -1,8 +1,17 @@
-const crypto = require('crypto');
-const { decryptString } = require('./_crypto');
+// api/login.js — Supabase version
+// Replaces the GitHub-backed login after migration.
 
-function sign(secret, payload) {
-  return crypto.createHmac('sha256', secret).update(payload).digest('hex');
+const crypto = require('crypto');
+
+async function sha256(str) {
+  const buf = crypto.createHash('sha256').update(str).digest();
+  return Buffer.from(buf).toString('hex');
+}
+
+function signToken(payload, secret) {
+  const b64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const sig = crypto.createHmac('sha256', secret).update(b64).digest('hex');
+  return `${b64}.${sig}`;
 }
 
 module.exports = async function handler(req, res) {
@@ -12,50 +21,58 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  const { username, passwordHash } = req.body || {};
-  if (!username || !passwordHash) return res.status(400).json({ error: 'Missing fields' });
+  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, INTEGTRACK_SECRET } = process.env;
 
-  const { GITHUB_PAT, GITHUB_OWNER, GITHUB_REPO, INTEGTRACK_SECRET, INTEGTRACK_ENC_KEY } = process.env;
-  if (!GITHUB_PAT || !GITHUB_OWNER || !GITHUB_REPO || !INTEGTRACK_SECRET || !INTEGTRACK_ENC_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !INTEGTRACK_SECRET) {
     return res.status(500).json({ error: 'Server misconfigured: missing env vars' });
   }
 
+  const { username, passwordHash } = req.body || {};
+  if (!username || !passwordHash) {
+    return res.status(400).json({ error: 'username and passwordHash required' });
+  }
+
+  const sbHeaders = {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    'Content-Type': 'application/json',
+  };
+
   try {
-    const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/data/users.json`;
-    const r = await fetch(url, {
-      headers: {
-        Authorization: `token ${GITHUB_PAT}`,
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'IntegTrack-Kognoz',
-      },
-    });
-    if (!r.ok) return res.status(502).json({ error: 'Could not reach GitHub' });
+    // Query Supabase for user
+    const r = await fetch(
+      `${SUPABASE_URL}/rest/v1/users?username=eq.${encodeURIComponent(username)}&select=*&limit=1`,
+      { headers: sbHeaders }
+    );
+    if (!r.ok) return res.status(500).json({ error: 'Database error' });
+    const rows = await r.json();
+    if (!rows.length) return res.status(401).json({ error: 'Invalid username or password' });
 
-    const data = await r.json();
-    if (!data.content) return res.status(502).json({ error: 'Unexpected GitHub response' });
+    const user = rows[0];
 
-    const encryptedB64 = Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf8');
-
-    let plaintext;
-    try {
-      plaintext = decryptString(encryptedB64, INTEGTRACK_ENC_KEY);
-    } catch (e) {
-      return res.status(500).json({ error: 'Decryption failed. Check INTEGTRACK_ENC_KEY.' });
+    // Compare password hash
+    if (user.password_hash !== passwordHash) {
+      return res.status(401).json({ error: 'Invalid username or password' });
     }
 
-    const users = JSON.parse(plaintext);
+    // Sign session token
+    const tokenPayload = {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      iat: Date.now(),
+    };
+    const token = signToken(tokenPayload, INTEGTRACK_SECRET);
 
-    const user = users.find(u => u.username === username && u.passwordHash === passwordHash);
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+    const userOut = {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      email: user.email || '',
+      role: user.role,
+    };
 
-    const payload = Buffer.from(`${username}:${passwordHash}`).toString('base64url');
-    const token = `${payload}.${sign(INTEGTRACK_SECRET, payload)}`;
-
-    return res.json({
-      token,
-      user: { id: user.id, name: user.name, role: user.role, username: user.username },
-      usersSha: data.sha,
-    });
+    return res.status(200).json({ token, user: userOut, usersSha: 'supabase' });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
