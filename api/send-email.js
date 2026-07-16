@@ -18,7 +18,7 @@ function welcomeEmailHtml({ name, username, password, appUrl }) {
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Welcome to IntegTrack</title>
+  <title>Welcome to Kora</title>
 </head>
 <body style="margin:0;padding:0;background:#f5f9fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f9fa;padding:40px 20px;">
@@ -29,7 +29,7 @@ function welcomeEmailHtml({ name, username, password, appUrl }) {
         <tr>
           <td style="background:#0d3d4f;padding:32px 40px;">
             <div style="font-size:28px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">kognoz</div>
-            <div style="font-size:11px;font-weight:600;color:#67d9f0;letter-spacing:2px;margin-top:2px;">INTEGTRACK</div>
+            <div style="font-size:11px;font-weight:600;color:#67d9f0;letter-spacing:2px;margin-top:2px;">KORA</div>
           </td>
         </tr>
 
@@ -38,7 +38,7 @@ function welcomeEmailHtml({ name, username, password, appUrl }) {
           <td style="padding:40px;">
             <p style="margin:0 0 8px;font-size:22px;font-weight:700;color:#0d3d4f;">Welcome, ${name}!</p>
             <p style="margin:0 0 28px;font-size:15px;color:#64748b;line-height:1.6;">
-              Your IntegTrack account has been created. Use the details below to log in and start tracking your projects.
+              Your Kora account has been created. Use the details below to log in and start tracking your projects.
             </p>
 
             <!-- Login Box -->
@@ -62,7 +62,7 @@ function welcomeEmailHtml({ name, username, password, appUrl }) {
                   </table>
                   <div style="margin-top:20px;">
                     <a href="${appUrl}" style="display:inline-block;background:#0e7490;color:#ffffff;font-weight:600;font-size:14px;padding:12px 24px;border-radius:10px;text-decoration:none;">
-                      Log in to IntegTrack →
+                      Log in to Kora →
                     </a>
                   </div>
                 </td>
@@ -105,7 +105,7 @@ function welcomeEmailHtml({ name, username, password, appUrl }) {
               This email was sent by your administrator at Kognoz. If you were not expecting this, please disregard it.
             </p>
             <p style="margin:8px 0 0;font-size:12px;color:#cbd5e1;">
-              Kognoz Consulting Pvt. Ltd. · IntegTrack
+              Kognoz Consulting Pvt. Ltd. · Kora
             </p>
           </td>
         </tr>
@@ -124,14 +124,14 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  const { RESEND_API_KEY, RESEND_FROM_EMAIL, INTEGTRACK_SECRET } = process.env;
+  const { RESEND_API_KEY, RESEND_FROM_EMAIL, KORA_SECRET } = process.env;
 
   if (!RESEND_API_KEY) {
     return res.status(500).json({ error: 'RESEND_API_KEY not configured in environment variables.' });
   }
 
   const token = req.headers['x-session-token'];
-  if (!isValidToken(token, INTEGTRACK_SECRET)) {
+  if (!isValidToken(token, KORA_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -147,7 +147,7 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'Missing required fields: to, name, username, password, appUrl' });
   }
 
-  const fromEmail = RESEND_FROM_EMAIL || 'IntegTrack <noreply@kognoz.in>';
+  const fromEmail = RESEND_FROM_EMAIL || 'Kora by Kognoz <noreply@kognoz.in>';
 
   try {
     const response = await fetch('https://api.resend.com/emails', {
@@ -159,7 +159,7 @@ module.exports = async function handler(req, res) {
       body: JSON.stringify({
         from: fromEmail,
         to: [to],
-        subject: `Welcome to IntegTrack, ${name}!`,
+        subject: `Welcome to Kora, ${name}!`,
         html: welcomeEmailHtml({ name, username, password, appUrl }),
       }),
     });
