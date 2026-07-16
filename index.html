@@ -775,7 +775,7 @@ function renderImplPhaseDetail(clientId,moduleId,phaseName){
           ${can('edit')?`<select id="ip-status" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${STATUSES.map(s=>`<option${s===ph.status?' selected':''}>${s}</option>`).join('')}</select>`:sbadge(ph.status)}
         </div>
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Assignee</label>
-          ${can('edit')?`<input id="ip-assignee" type="text" value="${esc(ph.assignee||'')}" placeholder="Who is responsible for this phase?" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`:
+          ${can('edit')?assigneeSelect('ip-assignee',ph.assignee||''):
           `<p class="text-sm text-gray-700">${esc(ph.assignee||'—')}</p>`}
         </div>
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Start Date</label>
@@ -1075,7 +1075,7 @@ function renderIntegDetail(clientId,integId){
           ${can('edit')?`<select id="f-status" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${STATUSES.map(s=>`<option${s===i.status?' selected':''}>${s}</option>`).join('')}</select>`:sbadge(i.status)}
         </div>
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Assignee</label>
-          ${can('edit')?`<input id="f-assignee" type="text" value="${esc(i.assignee||'')}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>`:
+          ${can('edit')?assigneeSelect('f-assignee',i.assignee||''):
           `<p class="text-sm text-gray-700">${esc(i.assignee||'—')}</p>`}
         </div>
         <div><label class="block text-xs font-medium text-gray-400 mb-1.5">Due Date</label>
@@ -1235,22 +1235,26 @@ function renderAdminClients(){
 
 function renderAdminUsers(){
   return`<div>
-  <div class="flex justify-end mb-4"><button data-act="modal-open" data-modal="add-user" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add User</button></div>
+  <div class="flex justify-end gap-2 mb-4">
+    <button data-act="modal-open" data-modal="bulk-import-users" class="bg-amber-50 border border-amber-200 text-amber-700 text-sm font-semibold px-4 py-2 rounded-xl hover:bg-amber-100 transition">⬆ Import Users (CSV)</button>
+    <button data-act="modal-open" data-modal="add-user" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add User</button>
+  </div>
   <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
     <table class="w-full text-sm">
       <thead class="border-b border-gray-100 bg-gray-50 sticky-head"><tr>
-        ${['Username','Name','Role','Actions'].map(h=>`<th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}
+        ${['Username','Full Name','Email','Role','Actions'].map(h=>`<th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">${h}</th>`).join('')}
       </tr></thead>
       <tbody class="divide-y divide-gray-50">
         ${S.users.length?S.users.map(u=>`<tr class="hover:bg-gray-50/50 transition">
           <td class="px-4 py-3 font-mono text-xs text-gray-700">${esc(u.username)}</td>
           <td class="px-4 py-3 font-medium text-gray-900">${esc(u.name)}</td>
+          <td class="px-4 py-3 text-xs text-gray-500">${esc(u.email||'—')}</td>
           <td class="px-4 py-3">${can('admin')&&u.id!==S.user?.id
             ?`<select data-act="change-role" data-uid="${u.id}" class="border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${ROLES.map(r=>`<option${r===u.role?' selected':''}>${r}</option>`).join('')}</select>`
             :`<span class="text-xs px-2 py-0.5 rounded-full font-medium ${u.role==='admin'?'bg-violet-100 text-violet-700':u.role==='editor'?'bg-cyan-100 text-cyan-800':'bg-gray-100 text-gray-600'}">${u.role}</span>`}
           </td>
           <td class="px-4 py-3">${u.id!==S.user?.id?`<button data-act="delete-user" data-uid="${u.id}" class="text-xs text-rose-400 hover:text-rose-600 font-medium">Delete</button>`:`<span class="text-xs text-gray-300">current user</span>`}</td>
-        </tr>`).join(''):`<tr><td colspan="4" class="text-center py-8 text-gray-400 text-sm">Loading users…</td></tr>`}
+        </tr>`).join(''):`<tr><td colspan="5" class="text-center py-8 text-gray-400 text-sm">No users yet</td></tr>`}
       </tbody>
     </table>
   </div>
@@ -1276,7 +1280,7 @@ function renderModal(){
       <div class="grid grid-cols-2 gap-3">
         <div><label class="block text-xs font-medium text-gray-500 mb-1">Status</label>
           <select id="m2" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></div>
-        <div><label class="block text-xs font-medium text-gray-500 mb-1">Assignee</label><input id="m3" type="text" placeholder="Name" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+        <div><label class="block text-xs font-medium text-gray-500 mb-1">Assignee</label>${assigneeSelect('m3')}</div>
       </div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Due Date</label><input id="m4" type="date" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m5" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none"></textarea></div>
@@ -1285,12 +1289,35 @@ function renderModal(){
     title='Add User';
     body=`<div class="space-y-3">
       <div class="grid grid-cols-2 gap-3">
-        <div><label class="block text-xs font-medium text-gray-500 mb-1">Username *</label><input id="m1" type="text" placeholder="john.doe" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
-        <div><label class="block text-xs font-medium text-gray-500 mb-1">Full Name *</label><input id="m2" type="text" placeholder="John Doe" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+        <div><label class="block text-xs font-medium text-gray-500 mb-1">Username *</label><input id="m1" type="text" placeholder="john.doe" autocomplete="off" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
+        <div><label class="block text-xs font-medium text-gray-500 mb-1">Full Name *</label><input id="m2" type="text" placeholder="John Doe" autocomplete="off" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       </div>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Email</label><input id="m5" type="email" placeholder="john@kognoz.in" autocomplete="off" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Password *</label><input id="m3" type="password" placeholder="••••••••" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Role</label>
         <select id="m4" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]">${ROLES.map(r=>`<option>${r}</option>`).join('')}</select></div>
+    </div>`;
+  } else if(m.type==='bulk-import-users'){
+    title='Import Users from CSV';
+    const rows=m.csvRows||[];
+    const valid=rows.filter(r=>!r.error);
+    const errors=rows.filter(r=>r.error);
+    btnLabel=rows.length?`Import ${valid.length} User${valid.length!==1?'s':''}`:'Preview';
+    body=`<div class="space-y-3">
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-gray-500">Paste CSV or use the template. One user per row.</p>
+        <button data-act="download-user-template" class="text-xs text-[#0e7490] font-semibold hover:underline">⬇ Download Template</button>
+      </div>
+      <textarea id="bulk-csv" rows="8" placeholder="username,full_name,role,email,password&#10;yashwanth.k,Yashwanth K,admin,yashwanth@kognoz.in,Kognoz@123&#10;priya.s,Priya S,editor,priya@kognoz.in,Kognoz@123" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(m.csvText||'')}</textarea>
+      <button data-act="preview-users-csv" class="w-full text-sm font-medium bg-gray-50 hover:bg-[#0e7490]/10 hover:text-[#0e7490] text-gray-700 border border-gray-200 rounded-xl py-2 transition">Preview Rows</button>
+      ${rows.length?`<div class="text-xs font-semibold text-gray-700 mt-1">${rows.length} rows parsed · <span class="text-green-600">${valid.length} valid</span>${errors.length?` · <span class="text-rose-600">${errors.length} errors</span>`:''}
+      </div>
+      <div class="max-h-48 overflow-y-auto space-y-1">
+        ${rows.map(r=>`<div class="flex items-start gap-2 text-xs px-2 py-1.5 rounded-lg ${r.error?'bg-rose-50':'bg-green-50'}">
+          <span class="${r.error?'text-rose-500':'text-green-600'} shrink-0">${r.error?'✕':'✓'}</span>
+          <div class="min-w-0 flex-1"><span class="font-medium">${esc(r.name)}</span> <span class="text-gray-400">(${esc(r.username)}, ${esc(r.role)})</span>${r.error?`<div class="text-rose-500">${esc(r.error)}</div>`:''}</div>
+        </div>`).join('')}
+      </div>`:''}
     </div>`;
   } else if(m.type==='add-impl-client'){
     title='Add Client to Implementations';
@@ -1314,7 +1341,7 @@ function renderModal(){
       <div><label class="block text-xs font-medium text-gray-500 mb-1">New Client Name</label><input id="m1" type="text" placeholder="e.g. HDFC Bank" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Description</label><textarea id="m2" rows="2" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none"></textarea></div>
       <div><label class="block text-xs font-medium text-gray-500 mb-1">Man-Day Rate (₹) <span class="text-gray-400 font-normal">optional — leave blank for retainer/hours-only</span></label><input id="m3" type="number" min="0" placeholder="e.g. 15000" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours <span class="text-gray-400 font-normal">optional</span></label><input id="m4" type="number" min="0" step="0.5" placeholder="Leave blank if not applicable" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
+      <div><label class="block text-xs font-medium text-gray-500 mb-1">Total Available Hours <span class="text-gray-400 font-normal">optional</span></label><input id="m4" type="number" min="0" step="0.5" autocomplete="off" placeholder="Leave blank if not applicable" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/>
       <p class="text-xs text-gray-400 mt-1">If set, hours are deducted from this pool first — only overages get billed.</p></div>
     </div>`;
   } else if(m.type==='edit-ams-client'){
@@ -1334,7 +1361,7 @@ function renderModal(){
     const ta=(id,val='',ph='',rows=2)=>`<textarea id="${id}" rows="${rows}" placeholder="${ph}" class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490] resize-none">${esc(val)}</textarea>`;
     body=`<div class="grid grid-cols-2 gap-3">
       ${fg('ae-date','Date Raised',inp('ae-date','date',m.dateRaised||todayStr()))}
-      ${fg('ae-raised','Raised / Attended By',inp('ae-raised','text',m.raisedBy||S.user?.name||'','Name'))}
+      ${fg('ae-raised','Raised / Attended By',assigneeSelect('ae-raised',m.raisedBy||S.user?.name||''))}
       ${fg('ae-module','Module / Meeting',inp('ae-module','text',m.module||'','e.g. Payroll, UAT Meeting'))}
       ${fg('ae-project','Project',inp('ae-project','text',m.project||'','Project name'))}
       ${fg('ae-type','Type',sel('ae-type',AMS_TYPES,m.type||AMS_TYPES[0]))}
@@ -2015,6 +2042,19 @@ document.addEventListener('click',async e=>{
     if(S.expandedAmsHistory.has(eid))S.expandedAmsHistory.delete(eid);else S.expandedAmsHistory.add(eid);
     render();return;
   }
+  if(act==='download-user-template'){
+    const csv='username,full_name,role,email,password\npriya.s,Priya S,editor,priya@kognoz.in,Kognoz@123\nrahul.m,Rahul M,editor,rahul@kognoz.in,Kognoz@123\n';
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='integtrack_users_template.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);
+    return;
+  }
+  if(act==='preview-users-csv'){
+    const csv=document.getElementById('bulk-csv')?.value||'';
+    if(!csv.trim()){showToast('Paste CSV content first','error');return;}
+    const rows=parseUsersCsv(csv);
+    if(!rows.length){showToast('No rows found in CSV','error');return;}
+    S.modal={...S.modal,csvRows:rows,csvText:csv};render();
+    return;
+  }
   if(act==='toggle-bulk-impl'){
     if(!can('admin'))return;
     const cid=el.dataset.cid;
@@ -2206,14 +2246,23 @@ document.addEventListener('click',async e=>{
       try{await saveClients(`Add ${name} to ${c.name}`);S.modal=null;showToast(`${name} added`);render();}
       catch(err){c.integrations.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
     } else if(m.type==='add-user'){
-      const username=document.getElementById('m1')?.value.trim(),name=document.getElementById('m2')?.value.trim(),password=document.getElementById('m3')?.value,role=document.getElementById('m4')?.value;
-      if(!username||!name||!password){showToast('All fields required','error');return;}
+      const username=document.getElementById('m1')?.value.trim(),name=document.getElementById('m2')?.value.trim(),password=document.getElementById('m3')?.value,role=document.getElementById('m4')?.value,email=document.getElementById('m5')?.value.trim()||'';
+      if(!username||!name||!password){showToast('Username, name and password are required','error');return;}
       if(S.users.find(x=>x.username===username)){showToast('Username taken','error');return;}
       S.modal={...m,busy:true};render();
       const hash=await sha256(password);
-      const nu={id:uid(),username,name,passwordHash:hash,role};S.users.push(nu);
-      try{await saveUsers(`Add ${username}`);S.modal=null;showToast(`${name} added`);render();}
+      const nu={id:uid(),username,name,email,passwordHash:hash,role};S.users.push(nu);
+      try{await saveUsers(`Add ${username}`);S.usersForDropdown=S.users.map(u=>({id:u.id,name:u.name||u.username,role:u.role,username:u.username}));S.modal=null;showToast(`${name} added`);render();}
       catch(err){S.users.pop();S.modal=null;showToast('Failed: '+err.message,'error');render();}
+    } else if(m.type==='bulk-import-users'){
+      const valid=(m.csvRows||[]).filter(r=>!r.error);
+      if(!valid.length){showToast('No valid rows to import','error');return;}
+      S.modal={...m,busy:true};render();
+      const newUsers=await Promise.all(valid.map(async r=>({id:uid(),username:r.username,name:r.name,email:r.email||'',passwordHash:await sha256(r.password),role:r.role})));
+      const prev=JSON.parse(JSON.stringify(S.users));
+      S.users=[...S.users,...newUsers];
+      try{await saveUsers(`Bulk import ${newUsers.length} users`);S.usersForDropdown=S.users.map(u=>({id:u.id,name:u.name||u.username,role:u.role,username:u.username}));S.modal=null;showToast(`${newUsers.length} user${newUsers.length!==1?'s':''} imported ✓`);render();}
+      catch(err){S.users=prev;S.modal=null;showToast('Import failed: '+err.message,'error');render();}
     } else if(m.type==='add-impl-client'){
       const existingId=document.getElementById('m0')?.value;
       if(existingId){
