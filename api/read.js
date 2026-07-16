@@ -1,5 +1,9 @@
+// api/read.js — Supabase version
+// Replaces the GitHub-backed read after migration.
+// Returns same interface as before: { content: base64(json), sha: 'supabase' }
+// Frontend needs zero changes.
+
 const crypto = require('crypto');
-const { decryptString } = require('./_crypto');
 
 function isValidToken(token, secret) {
   if (!token || !secret) return false;
@@ -15,49 +19,81 @@ function isValidToken(token, secret) {
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-session-token');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
 
-  const { GITHUB_PAT, GITHUB_OWNER, GITHUB_REPO, INTEGTRACK_SECRET, INTEGTRACK_ENC_KEY } = process.env;
+  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, INTEGTRACK_SECRET } = process.env;
 
   const token = req.headers['x-session-token'];
   if (!isValidToken(token, INTEGTRACK_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { path } = req.query;
-  if (!path) return res.status(400).json({ error: 'path required' });
+  const path = req.query.path;
+  if (!path) return res.status(400).json({ error: 'path query param required' });
 
-  if (!GITHUB_PAT || !GITHUB_OWNER || !GITHUB_REPO || !INTEGTRACK_ENC_KEY) {
-    return res.status(500).json({ error: 'Server misconfigured: missing env vars' });
-  }
+  const sbHeaders = {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    'Content-Type': 'application/json',
+  };
 
   try {
-    const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`;
-    const r = await fetch(url, {
-      headers: {
-        Authorization: `token ${GITHUB_PAT}`,
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'IntegTrack-Kognoz',
-      },
-    });
-    const data = await r.json();
+    if (path === 'data/clients.json') {
+      const r = await fetch(
+        `${SUPABASE_URL}/rest/v1/clients?select=*&order=name.asc`,
+        { headers: sbHeaders }
+      );
+      if (!r.ok) return res.status(r.status).json({ error: 'Supabase read error' });
+      const rows = await r.json();
 
-    // Pass through GitHub errors (404, rate limit, etc.) unchanged
-    if (!r.ok) return res.status(r.status).json(data);
-    if (!data.content) return res.status(502).json({ error: 'Unexpected GitHub response' });
+      // Reconstruct client objects matching old format exactly
+      const clients = rows.map(row => {
+        const c = {
+          id: row.id,
+          name: row.name,
+          description: row.description || '',
+          createdAt: row.created_at,
+          integrations: row.integrations || [],
+        };
+        // Optional sections — only add if they exist (same sentinel pattern as before)
+        if (row.modules !== null && row.modules !== undefined) c.modules = row.modules;
+        if (row.work_log !== null && row.work_log !== undefined) c.workLog = row.work_log;
+        if (row.man_day_rate !== null) c.manDayRate = row.man_day_rate;
+        if (row.total_available_hours !== null) c.totalAvailableHours = row.total_available_hours;
+        if (row.currency) c.currency = row.currency;
+        return c;
+      });
 
-    // data.content is base64 of our encrypted blob (a base64 string stored as the file's text)
-    const encryptedB64 = Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf8');
-
-    let plaintext;
-    try {
-      plaintext = decryptString(encryptedB64, INTEGTRACK_ENC_KEY);
-    } catch (e) {
-      return res.status(500).json({ error: 'Decryption failed. Check INTEGTRACK_ENC_KEY matches the key used to encrypt this file.' });
+      const content = Buffer.from(JSON.stringify(clients)).toString('base64');
+      return res.status(200).json({ content, sha: 'supabase' });
     }
 
-    // Re-package as base64(plaintext) so the frontend's existing JSON.parse(atob(...)) logic needs no changes
-    return res.json({ content: Buffer.from(plaintext, 'utf8').toString('base64'), sha: data.sha });
+    if (path === 'data/users.json') {
+      const r = await fetch(
+        `${SUPABASE_URL}/rest/v1/users?select=*&order=username.asc`,
+        { headers: sbHeaders }
+      );
+      if (!r.ok) return res.status(r.status).json({ error: 'Supabase read error' });
+      const rows = await r.json();
+
+      const users = rows.map(row => ({
+        id: row.id,
+        username: row.username,
+        name: row.name,
+        email: row.email || '',
+        role: row.role,
+        passwordHash: row.password_hash,
+        createdAt: row.created_at,
+      }));
+
+      const content = Buffer.from(JSON.stringify(users)).toString('base64');
+      return res.status(200).json({ content, sha: 'supabase' });
+    }
+
+    return res.status(404).json({ error: `Unknown path: ${path}` });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
