@@ -1,5 +1,10 @@
+// api/write.js — Supabase version
+// Replaces the GitHub-backed write after migration.
+// No SHA needed — no conflicts possible. Last write wins per row.
+// Frontend interface unchanged: POST with { path, content, sha, message }
+// sha is accepted but ignored.
+
 const crypto = require('crypto');
-const { encryptString } = require('./_crypto');
 
 function isValidToken(token, secret) {
   if (!token || !secret) return false;
@@ -17,70 +22,122 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-session-token');
-
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  const { GITHUB_PAT, GITHUB_OWNER, GITHUB_REPO, INTEGTRACK_SECRET, INTEGTRACK_ENC_KEY } = process.env;
+  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, INTEGTRACK_SECRET } = process.env;
 
   const token = req.headers['x-session-token'];
   if (!isValidToken(token, INTEGTRACK_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { path, content, message } = req.body || {};
+  const { path, content } = req.body || {};
   if (!path || content === undefined) {
     return res.status(400).json({ error: 'path and content required' });
   }
 
-  if (!GITHUB_PAT || !GITHUB_OWNER || !GITHUB_REPO || !INTEGTRACK_ENC_KEY) {
-    return res.status(500).json({ error: 'Server misconfigured: missing env vars' });
+  const sbHeaders = {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    'Content-Type': 'application/json',
+    'Prefer': 'resolution=merge-duplicates',
+  };
+
+  // Content comes as a JSON string from the frontend
+  let data;
+  try {
+    data = typeof content === 'string' ? JSON.parse(content) : content;
+  } catch (err) {
+    return res.status(400).json({ error: 'content must be valid JSON' });
   }
 
   try {
-    const plaintext = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
-    const encryptedB64 = encryptString(plaintext, INTEGTRACK_ENC_KEY);
+    if (path === 'data/clients.json') {
+      const rows = data.map(c => ({
+        id: c.id,
+        name: c.name,
+        description: c.description || '',
+        created_at: c.createdAt || new Date().toISOString(),
+        integrations: c.integrations || [],
+        modules: c.modules !== undefined ? c.modules : null,
+        work_log: c.workLog !== undefined ? c.workLog : null,
+        man_day_rate: c.manDayRate || null,
+        total_available_hours: c.totalAvailableHours || null,
+        currency: c.currency || 'INR',
+      }));
 
-    const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`;
-    const ghHeaders = {
-      Authorization: `token ${GITHUB_PAT}`,
-      Accept: 'application/vnd.github.v3+json',
-      'Content-Type': 'application/json',
-      'User-Agent': 'IntegTrack-Kognoz',
-    };
+      // Upsert all rows from the frontend
+      if (rows.length > 0) {
+        const upsertRes = await fetch(`${SUPABASE_URL}/rest/v1/clients`, {
+          method: 'POST',
+          headers: sbHeaders,
+          body: JSON.stringify(rows),
+        });
+        if (!upsertRes.ok) {
+          const e = await upsertRes.json();
+          return res.status(upsertRes.status).json({ error: e.message || 'Supabase upsert error' });
+        }
+      }
 
-    // Always fetch the current SHA from GitHub right before writing.
-    // This eliminates the "SHA does not match" 422 error that occurs when
-    // multiple users have the app open simultaneously: each user's in-memory
-    // SHA becomes stale as soon as any other user saves, but by fetching here
-    // we always use the true current SHA regardless of what the client sent.
-    let currentSha = null;
-    const getRes = await fetch(url, { headers: ghHeaders });
-    if (getRes.ok) {
-      const getData = await getRes.json();
-      currentSha = getData.sha;
-    } else if (getRes.status !== 404) {
-      // 404 means file doesn't exist yet (first-time create) — no SHA needed.
-      // Any other status is a genuine GitHub error.
-      const errData = await getRes.json();
-      return res.status(getRes.status).json({ error: errData.message || 'Failed to fetch current file SHA from GitHub' });
+      // Delete any rows that are no longer in the frontend array
+      // (handles client deletion)
+      const newIds = rows.map(r => r.id);
+      if (newIds.length > 0) {
+        // Delete where id not in the new set
+        const idList = newIds.map(id => `"${id}"`).join(',');
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/clients?id=not.in.(${idList})`,
+          { method: 'DELETE', headers: { ...sbHeaders, Prefer: '' } }
+        );
+      } else {
+        // All clients deleted — delete everything
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/clients?id=neq.""`,
+          { method: 'DELETE', headers: { ...sbHeaders, Prefer: '' } }
+        );
+      }
+
+      return res.status(200).json({ sha: 'supabase' });
     }
 
-    const body = {
-      message: message || `Update ${path}`,
-      content: Buffer.from(encryptedB64).toString('base64'),
-    };
-    if (currentSha) body.sha = currentSha;
+    if (path === 'data/users.json') {
+      const rows = data.map(u => ({
+        id: u.id,
+        username: u.username,
+        name: u.name,
+        email: u.email || '',
+        role: u.role,
+        password_hash: u.passwordHash,
+        created_at: u.createdAt || new Date().toISOString(),
+      }));
 
-    const putRes = await fetch(url, {
-      method: 'PUT',
-      headers: ghHeaders,
-      body: JSON.stringify(body),
-    });
+      if (rows.length > 0) {
+        const upsertRes = await fetch(`${SUPABASE_URL}/rest/v1/users`, {
+          method: 'POST',
+          headers: sbHeaders,
+          body: JSON.stringify(rows),
+        });
+        if (!upsertRes.ok) {
+          const e = await upsertRes.json();
+          return res.status(upsertRes.status).json({ error: e.message || 'Supabase upsert error' });
+        }
+      }
 
-    const putData = await putRes.json();
-    if (!putRes.ok) return res.status(putRes.status).json({ error: putData.message || 'GitHub error', detail: putData });
-    return res.status(200).json({ sha: putData.content.sha });
+      // Delete removed users
+      const newIds = rows.map(r => r.id);
+      if (newIds.length > 0) {
+        const idList = newIds.map(id => `"${id}"`).join(',');
+        await fetch(
+          `${SUPABASE_URL}/rest/v1/users?id=not.in.(${idList})`,
+          { method: 'DELETE', headers: { ...sbHeaders, Prefer: '' } }
+        );
+      }
+
+      return res.status(200).json({ sha: 'supabase' });
+    }
+
+    return res.status(404).json({ error: `Unknown path: ${path}` });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
