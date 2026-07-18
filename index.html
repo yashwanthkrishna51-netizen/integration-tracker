@@ -12,89 +12,452 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-*{font-family:'Poppins',sans-serif;font-variant-numeric:tabular-nums}
-[data-act]{cursor:pointer;transition:transform .1s ease}
-[data-act]:not(input):not(select):not(textarea):active{transform:scale(.97)}
-.fade{animation:fi .18s ease}
-@keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-.modal-pop{animation:mp .16s cubic-bezier(.2,.9,.3,1)}
-@keyframes mp{from{opacity:0;transform:scale(.96) translateY(6px)}to{opacity:1;transform:none}}
-.toast-in{animation:ti .22s cubic-bezier(.2,.9,.3,1)}
-@keyframes ti{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}
-.row-in{animation:ri .25s ease backwards}
-@keyframes ri{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
-.card-hover{transition:transform .18s ease,box-shadow .18s ease}
-.card-hover:hover{transform:translateY(-2px);box-shadow:0 8px 20px -4px rgba(13,61,79,.12)}
-.bar-fill{transition:width .5s cubic-bezier(.3,.8,.4,1)}
-.pulse-dot{animation:pd 2s ease-in-out infinite}
-@keyframes pd{0%,100%{box-shadow:0 0 0 0 rgba(225,29,72,.4)}50%{box-shadow:0 0 0 4px rgba(225,29,72,0)}}
-.label-fade{transition:opacity .15s ease}
-.sidebar-scroll::-webkit-scrollbar{width:5px}
-.sidebar-scroll::-webkit-scrollbar-thumb{background:#1a6b8a40;border-radius:4px}
-th[data-sort]:hover{background:#f0f7f9}
-thead.sticky-head th{position:sticky;top:0;z-index:5}
-.brand-k{color:#0e7490}
-.brand-dot{color:#b5179e}
-.nav-active{background:linear-gradient(135deg,#0e7490,#0a5b73);color:#fff;box-shadow:0 2px 8px -1px rgba(14,116,144,.4)}
-.btn-grad{background:linear-gradient(135deg,#0e7490,#0a5b73)}
-.btn-grad:hover{background:linear-gradient(135deg,#0d3d4f,#082e3a)}
-#loading-bar{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,#0e7490,#b5179e);z-index:200;width:0%;opacity:0;transition:width .3s ease,opacity .2s ease}
-.btn-busy{pointer-events:none;opacity:.7}
-.skel{background:linear-gradient(90deg,#f1f5f6 25%,#e6edee 37%,#f1f5f6 63%);background-size:400% 100%;animation:skl 1.4s ease infinite}
-@keyframes skl{0%{background-position:100% 50%}100%{background-position:0% 50%}}
-@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
-::view-transition-old(root),::view-transition-new(root){animation-duration:.2s;animation-timing-function:cubic-bezier(.2,.9,.3,1)}
+/* ═══════════════════════════════════════════════════════════════════
+   KORA DESIGN SYSTEM v2
+   Deep-charcoal primary, teal supporting, monochrome status
+═══════════════════════════════════════════════════════════════════ */
+:root {
+  --ink:      #0a0a0b;
+  --ink-2:    #18181b;
+  --ink-3:    #3f3f46;
+  --mute:     #71717a;
+  --mute-2:   #a1a1aa;
+  --line:     #e4e4e7;
+  --line-2:   #f4f4f5;
+  --surface:  #fafafa;
+  --paper:    #ffffff;
+  --teal:     #0e7490;
+  --teal-hi:  #f0f9fb;
+  --teal-lo:  #e0f2f7;
+  --green:    #15803d;
+  --green-hi: #f0fdf4;
+  --amber:    #a16207;
+  --amber-hi: #fefce8;
+  --red:      #b91c1c;
+  --red-hi:   #fef2f2;
+  --radius-s: 3px;
+  --radius:   4px;
+  --radius-l: 6px;
+  --pill:     9999px;
+  --font:     'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono:     'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  --t-fast:   120ms cubic-bezier(.2,.7,.3,1);
+  --t:        200ms cubic-bezier(.2,.7,.3,1);
+  --shadow-s: 0 1px 2px 0 rgba(0,0,0,.04);
+  --shadow:   0 4px 12px -2px rgba(0,0,0,.06), 0 2px 4px -1px rgba(0,0,0,.04);
+  --shadow-l: 0 20px 40px -12px rgba(0,0,0,.12), 0 8px 16px -4px rgba(0,0,0,.06);
+}
 
-/* ─── DARK MODE ───────────────────────────────────────────────────
-   Overrides Tailwind's generated utility classes by selector specificity
-   (html.dark .foo beats .foo) rather than rewriting every template string. */
-html.dark{color-scheme:dark}
-html.dark body{background:#0b1219;color:#eef2f6}
-html.dark .bg-white{background-color:#141d27}
-html.dark .bg-gray-50{background-color:#1a232e}
-html.dark .bg-gray-100{background-color:#212c38}
-html.dark .bg-rose-50{background-color:#3a1620}
-html.dark .bg-rose-100{background-color:#45192a}
-html.dark .bg-green-50{background-color:#0f2a1d}
-html.dark .bg-green-100{background-color:#133622}
-html.dark .bg-cyan-50{background-color:#0d2935}
-html.dark .bg-cyan-100{background-color:#113441}
-html.dark .bg-violet-50{background-color:#211a3a}
-html.dark .bg-violet-100{background-color:#281f47}
-html.dark .bg-amber-50{background-color:#362a12}
-html.dark .text-gray-200{color:#36404c}
-html.dark .text-gray-300{color:#475260}
-html.dark .text-gray-400{color:#6b7787}
-html.dark .text-gray-500{color:#8b97a6}
-html.dark .text-gray-600{color:#a7b2c0}
-html.dark .text-gray-700{color:#c0c9d4}
-html.dark .text-gray-800{color:#d7dee5}
-html.dark .text-gray-900{color:#eef2f6}
-html.dark .text-rose-400,html.dark .text-rose-500,html.dark .text-rose-600,html.dark .text-rose-700{color:#fb7185}
-html.dark .text-green-600,html.dark .text-green-700{color:#4ade80}
-html.dark .text-cyan-800{color:#67e8f9}
-html.dark .text-amber-600,html.dark .text-amber-700{color:#fbbf24}
-html.dark .text-violet-600,html.dark .text-violet-700{color:#a78bfa}
-html.dark .border-gray-50{border-color:#182029}
-html.dark .border-gray-100{border-color:#212b36}
-html.dark .border-gray-200{border-color:#2b3744}
-html.dark .border-amber-200{border-color:#4d3a16}
-html.dark .border-green-200{border-color:#1d4029}
-html.dark .border-rose-200{border-color:#4a2030}
-html.dark .border-violet-200{border-color:#392c54}
-html.dark .border-cyan-200{border-color:#194653}
-html.dark [class~="text-[#0e7490]"]{color:#22d3ee}
-html.dark .brand-k{color:#22d3ee}
-html.dark [class~="bg-[#0e7490]/10"]{background-color:rgba(34,211,238,.14)}
-html.dark [class~="bg-[#0e7490]/5"]{background-color:rgba(34,211,238,.08)}
-html.dark [class~="border-[#0e7490]/30"]{border-color:rgba(34,211,238,.35)}
-html.dark input,html.dark select,html.dark textarea{background-color:#1a2430;color:#eef2f6;border-color:#2b3744}
-html.dark input::placeholder,html.dark textarea::placeholder{color:#5b6675}
-html.dark option{background-color:#1a2430;color:#eef2f6}
-html.dark .skel{background:linear-gradient(90deg,#1a2430 25%,#222e3a 37%,#1a2430 63%)}
-html.dark ::-webkit-scrollbar-thumb{background:#2b3744}
+/* Base */
+* {
+  font-family: var(--font);
+  font-feature-settings: 'ss01', 'cv11';
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+html, body { background: var(--surface); color: var(--ink); }
+body { font-size: 13px; line-height: 1.5; letter-spacing: -0.005em; }
+
+/* Typography scale — locked */
+h1, .k-h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; color: var(--ink); }
+h2, .k-h2 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; color: var(--ink); }
+h3, .k-h3 { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; line-height: 1.4; color: var(--ink); }
+.k-eyebrow { font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mute); }
+.k-num-l { font-family: var(--mono); font-size: 28px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.1; color: var(--ink); }
+.k-num { font-family: var(--mono); font-weight: 500; letter-spacing: -0.005em; }
+.k-mono { font-family: var(--mono); font-size: 12px; }
+
+/* Interaction */
+[data-act] { cursor: pointer; }
+[data-act]:disabled, .btn-busy { pointer-events: none; opacity: .5; }
+
+/* ── Buttons ──────────────────────────────────────────────────── */
+.k-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 6px; height: 32px; padding: 0 12px;
+  font-size: 13px; font-weight: 500; letter-spacing: -0.003em;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: transparent; color: var(--ink);
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast), transform var(--t-fast);
+  white-space: nowrap;
+}
+.k-btn:active:not(:disabled) { transform: scale(.98); }
+.k-btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.k-btn-primary { background: var(--ink); color: #fff; }
+.k-btn-primary:hover { background: var(--ink-3); }
+.k-btn-secondary { border-color: var(--line); background: var(--paper); }
+.k-btn-secondary:hover { background: var(--surface); border-color: var(--mute-2); }
+.k-btn-ghost { color: var(--ink-3); padding: 0 8px; }
+.k-btn-ghost:hover { background: var(--surface); color: var(--ink); }
+.k-btn-danger { color: var(--red); }
+.k-btn-danger:hover { background: var(--red-hi); }
+.k-btn-sm { height: 26px; padding: 0 10px; font-size: 12px; }
+.k-btn-lg { height: 40px; padding: 0 20px; font-size: 14px; }
+
+/* ── Inputs ──────────────────────────────────────────────────── */
+.k-input, input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+select, textarea {
+  height: 34px; padding: 0 10px;
+  font-size: 13px; font-family: var(--font);
+  background: var(--paper); color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+  width: 100%;
+}
+textarea { height: auto; padding: 8px 10px; resize: vertical; min-height: 60px; }
+.k-input:focus, input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(10,10,11,.06);
+}
+input::placeholder, textarea::placeholder { color: var(--mute-2); }
+label { font-size: 11px; font-weight: 500; color: var(--mute); text-transform: uppercase; letter-spacing: 0.04em; }
+
+/* ── Status pills — dot + label, no fill ─────────────────────── */
+.k-status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500; color: var(--ink);
+  padding: 2px 8px 2px 8px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--pill);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.k-status::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--mute-2);
+}
+.k-status-completed::before { background: var(--green); }
+.k-status-inprogress::before { background: var(--teal); }
+.k-status-atrisk::before { background: var(--red); }
+.k-status-onhold::before { background: var(--amber); }
+.k-status-pending::before { background: var(--amber); }
+.k-status-review::before { background: var(--teal); }
+.k-status-delayed::before { background: var(--red); }
+.k-status-cancelled::before { background: var(--mute); }
+.k-status-cancelled { color: var(--mute); text-decoration: line-through; }
+.k-status-notstarted::before { background: var(--mute-2); }
+
+/* RAG dots */
+.k-rag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--ink); }
+.k-rag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; }
+.k-rag-green::before { background: var(--green); }
+.k-rag-amber::before { background: var(--amber); }
+.k-rag-red::before { background: var(--red); box-shadow: 0 0 0 0 rgba(185,28,28,.4); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(185,28,28,.4); } 50% { box-shadow: 0 0 0 4px rgba(185,28,28,0); } }
+
+/* ── Cards & Surfaces ─────────────────────────────────────────── */
+.k-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  overflow: hidden;
+}
+.k-card-hover { transition: border-color var(--t-fast), transform var(--t-fast); }
+.k-card-hover:hover { border-color: var(--ink-3); transform: translateY(-1px); }
+.k-section {
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+.k-section:last-child { border-bottom: 0; }
+
+/* ── Tables ──────────────────────────────────────────────────── */
+.k-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.k-table th {
+  height: 36px; padding: 0 12px;
+  text-align: left;
+  font-size: 11px; font-weight: 500; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--mute);
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 5;
+}
+.k-table td {
+  height: 44px; padding: 0 12px;
+  color: var(--ink);
+  border-bottom: 1px solid var(--line-2);
+}
+.k-table tr:hover td { background: var(--surface); }
+.k-table tr:last-child td { border-bottom: 0; }
+.k-table-compact td { height: 36px; }
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+.k-sidebar {
+  background: var(--ink-2);
+  color: #d4d4d8;
+  border-right: 1px solid var(--ink);
+}
+.k-sidebar .k-side-header { border-bottom: 1px solid rgba(255,255,255,.06); }
+.k-sidebar .k-side-search {
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.08);
+  color: #fff;
+  font-size: 13px; height: 32px;
+}
+.k-sidebar .k-side-search::placeholder { color: #71717a; }
+.k-sidebar .k-side-search:focus { border-color: rgba(255,255,255,.2); box-shadow: none; background: rgba(255,255,255,.08); }
+.k-sidebar .k-side-group { font-size: 10px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: #52525b; padding: 0 12px; margin-top: 20px; margin-bottom: 6px; }
+.k-sidebar .k-side-item {
+  display: flex; align-items: center; gap: 10px;
+  height: 32px; padding: 0 12px; margin: 0 8px;
+  font-size: 13px; font-weight: 500; color: #a1a1aa;
+  border-radius: var(--radius);
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.k-sidebar .k-side-item:hover { color: #fff; background: rgba(255,255,255,.05); }
+.k-sidebar .k-side-item.active { color: #fff; background: rgba(255,255,255,.08); }
+.k-sidebar .k-side-icon { width: 16px; height: 16px; flex-shrink: 0; opacity: .7; }
+.k-sidebar .k-side-item.active .k-side-icon,
+.k-sidebar .k-side-item:hover .k-side-icon { opacity: 1; }
+.k-sidebar .k-side-profile { border-top: 1px solid rgba(255,255,255,.06); padding: 12px; }
+.k-sidebar .k-side-profile:hover { background: rgba(255,255,255,.03); }
+.k-sidebar .k-side-brand { font-family: var(--font); font-weight: 700; letter-spacing: 0.14em; color: var(--teal); font-size: 12px; }
+.k-sidebar .k-side-tag { color: #52525b; font-size: 10px; }
+
+/* ── Modals ──────────────────────────────────────────────────── */
+.k-modal-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(9, 9, 11, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.k-modal {
+  background: var(--paper);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-l);
+  animation: modal-in var(--t);
+  max-height: 90vh; overflow-y: auto;
+  width: 100%;
+}
+@keyframes modal-in { from { opacity: 0; transform: scale(.98) translateY(4px); } to { opacity: 1; transform: none; } }
+.k-modal-header { padding: 20px 24px 12px; }
+.k-modal-body { padding: 8px 24px 16px; }
+.k-modal-footer { padding: 16px 24px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ── Badges & Chips ───────────────────────────────────────────── */
+.k-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 500; letter-spacing: 0.02em;
+  padding: 2px 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  color: var(--ink-3);
+}
+.k-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--ink-3);
+  padding: 4px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  transition: border-color var(--t-fast), color var(--t-fast);
+}
+.k-chip:hover { border-color: var(--ink); color: var(--ink); }
+
+/* ── Tabs ────────────────────────────────────────────────────── */
+.k-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); }
+.k-tab {
+  padding: 10px 16px;
+  font-size: 13px; font-weight: 500; color: var(--mute);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.k-tab:hover { color: var(--ink); }
+.k-tab.active { color: var(--ink); border-bottom-color: var(--ink); }
+
+/* ── Toolbar ─────────────────────────────────────────────────── */
+.k-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.k-toolbar-spacer { flex: 1; }
+
+/* ── Page containers ─────────────────────────────────────────── */
+.k-page { max-width: 1280px; margin: 0 auto; padding: 32px 32px 48px; }
+.k-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.k-crumbs { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mute); margin-bottom: 8px; }
+.k-crumbs a { color: var(--mute); }
+.k-crumbs a:hover { color: var(--ink); }
+
+/* ── Loading bar ─────────────────────────────────────────────── */
+#loading-bar {
+  position: fixed; top: 0; left: 0; height: 2px;
+  background: var(--ink);
+  z-index: 200; width: 0%; opacity: 0;
+  transition: width .3s ease, opacity .2s ease;
+}
+
+/* ── Toast ───────────────────────────────────────────────────── */
+.toast-in { animation: toast var(--t); }
+@keyframes toast { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ── Utility overrides for legacy Tailwind classes ───────────── */
+/* Neutralise old rounded pills into consistent 4px radius */
+.rounded-xl, .rounded-2xl { border-radius: var(--radius-l) !important; }
+.rounded-lg { border-radius: var(--radius) !important; }
+.rounded-3xl { border-radius: var(--radius-l) !important; }
+
+/* Kill all Tailwind bg color noise; keep only what our system uses */
+.bg-white { background-color: var(--paper) !important; }
+.bg-gray-50 { background-color: var(--surface) !important; }
+.bg-gray-100 { background-color: var(--line-2) !important; }
+.bg-gray-200 { background-color: var(--line) !important; }
+.border-gray-100 { border-color: var(--line-2) !important; }
+.border-gray-200 { border-color: var(--line) !important; }
+.border-gray-300 { border-color: var(--line) !important; }
+.text-gray-300 { color: var(--mute-2) !important; }
+.text-gray-400 { color: var(--mute) !important; }
+.text-gray-500 { color: var(--mute) !important; }
+.text-gray-600 { color: var(--ink-3) !important; }
+.text-gray-700 { color: var(--ink-3) !important; }
+.text-gray-800 { color: var(--ink) !important; }
+.text-gray-900 { color: var(--ink) !important; }
+
+/* Old status badge classes get remapped to k-status style */
+.bg-green-50, .bg-green-100 { background: transparent !important; border-color: transparent !important; }
+.bg-cyan-50, .bg-cyan-100 { background: transparent !important; border-color: transparent !important; }
+.bg-rose-50, .bg-rose-100 { background: transparent !important; border-color: transparent !important; }
+.bg-amber-50, .bg-amber-100 { background: transparent !important; border-color: transparent !important; }
+.bg-violet-50, .bg-violet-100 { background: transparent !important; border-color: transparent !important; }
+.bg-purple-50, .bg-purple-100 { background: transparent !important; border-color: transparent !important; }
+.bg-sky-50, .bg-sky-100 { background: transparent !important; border-color: transparent !important; }
+.bg-orange-50, .bg-orange-100 { background: transparent !important; border-color: transparent !important; }
+
+/* Old text colours normalized to ink */
+.text-green-700, .text-cyan-800, .text-rose-700, .text-rose-600, .text-violet-700, .text-purple-700,
+.text-amber-700, .text-sky-700, .text-orange-700 { color: var(--ink) !important; }
+
+/* Buttons using btn-grad get mapped to k-btn-primary look */
+.btn-grad {
+  background: var(--ink) !important;
+  color: #fff !important;
+  border-radius: var(--radius) !important;
+  transition: background var(--t-fast) !important;
+}
+.btn-grad:hover { background: var(--ink-3) !important; }
+
+/* Kill gradient nav-active — use ink instead */
+.nav-active {
+  background: var(--ink) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+/* Rings and focus */
+.focus\:ring-2:focus, .focus\:ring-\[\#0e7490\]:focus {
+  box-shadow: 0 0 0 3px rgba(10,10,11,.08) !important;
+  --tw-ring-color: transparent;
+}
+
+/* Standard link/accent colour */
+[class~="text-[#0e7490]"] { color: var(--ink) !important; }
+[class~="text-[#0d3d4f]"] { color: var(--ink) !important; }
+.brand-k { color: var(--teal); }
+[class~="bg-[#0e7490]"] { background-color: var(--ink) !important; }
+[class~="bg-[#0e7490]/10"] { background-color: var(--surface) !important; }
+[class~="bg-[#0e7490]/8"] { background-color: var(--surface) !important; }
+[class~="bg-[#0e7490]/5"] { background-color: var(--surface) !important; }
+[class~="border-[#0e7490]"] { border-color: var(--ink) !important; }
+[class~="border-[#0e7490]/30"] { border-color: var(--line) !important; }
+[class~="border-[#0e7490]/20"] { border-color: var(--line) !important; }
+
+/* Sticky table header default styling */
+.sticky-head th { position: sticky; top: 0; background: var(--paper); z-index: 5; }
+th[data-sort]:hover { background: var(--surface); }
+
+/* Animations — subdued */
+.fade { animation: fade-in 200ms cubic-bezier(.2,.7,.3,1); }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.modal-pop { animation: modal-in var(--t); }
+.row-in { animation: fade-in 250ms ease backwards; }
+.card-hover { transition: border-color var(--t-fast), transform var(--t-fast); }
+.card-hover:hover { border-color: var(--ink-3); transform: translateY(-1px); box-shadow: var(--shadow-s); }
+.bar-fill { transition: width 400ms cubic-bezier(.3,.8,.4,1); background: var(--ink) !important; }
+.pulse-dot { animation: pulse 2s ease-in-out infinite; }
+.label-fade { transition: opacity var(--t-fast); }
+
+/* Skeleton */
+.skel { background: linear-gradient(90deg, var(--line-2) 25%, var(--surface) 37%, var(--line-2) 63%); background-size: 400% 100%; animation: skl 1.4s ease infinite; }
+@keyframes skl { 0% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--mute-2); }
+.sidebar-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); }
+.sidebar-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.2); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   DARK MODE — Kora inverts to true dark, sidebar becomes light
+═══════════════════════════════════════════════════════════════════ */
+html.dark {
+  --ink:      #fafafa;
+  --ink-2:    #f4f4f5;
+  --ink-3:    #a1a1aa;
+  --mute:     #71717a;
+  --mute-2:   #52525b;
+  --line:     #27272a;
+  --line-2:   #1f1f22;
+  --surface:  #09090b;
+  --paper:    #18181b;
+  --teal:     #22d3ee;
+  --teal-hi:  rgba(34,211,238,.1);
+  --teal-lo:  rgba(34,211,238,.08);
+  --green:    #4ade80;
+  --green-hi: rgba(74,222,128,.1);
+  --amber:    #fbbf24;
+  --amber-hi: rgba(251,191,36,.1);
+  --red:      #f87171;
+  --red-hi:   rgba(248,113,113,.1);
+  --shadow-s: 0 1px 2px 0 rgba(0,0,0,.4);
+  --shadow:   0 4px 12px -2px rgba(0,0,0,.5), 0 2px 4px -1px rgba(0,0,0,.3);
+  --shadow-l: 0 20px 40px -12px rgba(0,0,0,.6);
+  color-scheme: dark;
+}
+html.dark body { background: var(--surface); color: var(--ink); }
+/* Sidebar in dark mode inverts to a lighter panel — swap so it stands out */
+html.dark .k-sidebar {
+  background: #f4f4f5;
+  color: #18181b;
+  border-right: 1px solid #27272a;
+}
+html.dark .k-sidebar .k-side-item { color: #52525b; }
+html.dark .k-sidebar .k-side-item:hover { color: #18181b; background: rgba(0,0,0,.05); }
+html.dark .k-sidebar .k-side-item.active { color: #18181b; background: rgba(0,0,0,.08); }
+html.dark .k-sidebar .k-side-header { border-bottom: 1px solid rgba(0,0,0,.06); }
+html.dark .k-sidebar .k-side-profile { border-top: 1px solid rgba(0,0,0,.06); }
+html.dark .k-sidebar .k-side-search { background: rgba(0,0,0,.05); color: #18181b; border-color: rgba(0,0,0,.08); }
+html.dark .k-sidebar .k-side-search::placeholder { color: #a1a1aa; }
+html.dark .k-sidebar .k-side-brand { color: #0e7490; }
+html.dark .k-sidebar .k-side-tag { color: #71717a; }
+html.dark .k-sidebar .k-side-group { color: #a1a1aa; }
+html.dark .k-btn-primary { background: #fafafa; color: #09090b; }
+html.dark .k-btn-primary:hover { background: #d4d4d8; }
+html.dark .btn-grad { background: #fafafa !important; color: #09090b !important; }
+html.dark .btn-grad:hover { background: #d4d4d8 !important; }
+html.dark .nav-active { background: #fafafa !important; color: #09090b !important; }
+html.dark .bar-fill { background: var(--ink) !important; }
+html.dark input, html.dark select, html.dark textarea { background: var(--paper); color: var(--ink); border-color: var(--line); }
+html.dark input::placeholder, html.dark textarea::placeholder { color: var(--mute-2); }
+html.dark option { background: var(--paper); color: var(--ink); }
+html.dark .skel { background: linear-gradient(90deg, var(--line-2) 25%, var(--paper) 37%, var(--line-2) 63%); }
+html.dark ::-webkit-scrollbar-thumb { background: var(--line); }
+html.dark ::-webkit-scrollbar-thumb:hover { background: var(--mute-2); }
+html.dark .k-modal-overlay { background: rgba(0,0,0,.7); }
 </style>
 </head>
 <body class="bg-[#f5f9fa] text-gray-900">
@@ -123,8 +486,8 @@ const AMS_ENTRY_STATUSES=['Open','In Progress','Closed'];
 const AMS_MODES=['Online / Remote','Offline / In-person'];
 const HOURS_PER_DAY=8;
 const TEAL='0e7490',TEAL_DARK='0d3d4f',MAGENTA='b5179e',VIOLET='7c3aed';
-const SBG={'Completed':'bg-green-100 text-green-700 border border-green-200','In Progress':'bg-cyan-100 text-cyan-800 border border-cyan-200','At Risk':'bg-rose-100 text-rose-700 border border-rose-200','On Hold — Internal':'bg-violet-100 text-violet-700 border border-violet-200','On Hold — Client':'bg-purple-100 text-purple-700 border border-purple-200','Pending Client':'bg-amber-100 text-amber-700 border border-amber-200','Under Review':'bg-sky-100 text-sky-700 border border-sky-200','Delayed':'bg-orange-100 text-orange-700 border border-orange-200','Cancelled':'bg-gray-200 text-gray-500 border border-gray-300 line-through','Not Started':'bg-gray-100 text-gray-500 border border-gray-200'};
-const SDOT={'Completed':'bg-green-500','In Progress':'bg-cyan-600','At Risk':'bg-rose-600','On Hold — Internal':'bg-violet-500','On Hold — Client':'bg-purple-500','Pending Client':'bg-amber-500','Under Review':'bg-sky-500','Delayed':'bg-orange-500','Cancelled':'bg-gray-400','Not Started':'bg-gray-400'};
+const SBG={'Completed':'k-status k-status-completed','In Progress':'k-status k-status-inprogress','At Risk':'k-status k-status-atrisk','On Hold — Internal':'k-status k-status-onhold','On Hold — Client':'k-status k-status-onhold','Pending Client':'k-status k-status-pending','Under Review':'k-status k-status-review','Delayed':'k-status k-status-delayed','Cancelled':'k-status k-status-cancelled','Not Started':'k-status k-status-notstarted'};
+const SDOT={'Completed':'','In Progress':'','At Risk':'','On Hold — Internal':'','On Hold — Client':'','Pending Client':'','Under Review':'','Delayed':'','Cancelled':'','Not Started':''};
 const SHEX={'Completed':'22c55e','In Progress':'0e7490','At Risk':'be185d','On Hold — Internal':'7c3aed','On Hold — Client':'9333ea','Pending Client':'d97706','Under Review':'0284c7','Delayed':'ea580c','Cancelled':'94a3b8','Not Started':'64748b'};
 const SRGB={'Completed':[34,197,94],'In Progress':[14,116,144],'At Risk':[190,24,93],'On Hold — Internal':[124,58,237],'On Hold — Client':[147,51,234],'Pending Client':[217,119,6],'Under Review':[2,132,199],'Delayed':[234,88,12],'Cancelled':[148,163,184],'Not Started':[100,116,139]};
 
@@ -239,13 +602,13 @@ let _tt;
 function showToast(msg,type='success',duration=3500,action=null){
   S.toast={msg,type};
   const el=document.getElementById('toast');
-  const c={success:'bg-green-600',error:'bg-rose-600',info:'bg-[#0e7490]',warn:'bg-amber-600'};
-  const icon={success:'✓',error:'✕',info:'ℹ',warn:'⚠'}[type]||'✓';
-  const cls=`fixed bottom-5 right-5 z-[100] ${c[type]||c.info} text-white text-sm font-medium px-4 py-3 rounded-xl shadow-xl toast-in flex items-center gap-2`;
-  const undoBtn=action==='undo-delete'?`<button data-act="exec-undo" class="ml-2 underline text-white font-bold text-xs">Undo</button>`:'';
-  const html=`<span class="text-base leading-none">${icon}</span><span>${esc(msg)}</span>${undoBtn}`;
-  if(el){el.className=cls;el.innerHTML=html;el.style.display='flex';}
-  else{const d=document.createElement('div');d.id='toast';d.className=cls;d.innerHTML=html;document.body.appendChild(d);}
+  const bg={success:'#15803d',error:'#b91c1c',info:'#18181b',warn:'#a16207'}[type]||'#18181b';
+  const icon={success:'✓',error:'✕',info:'i',warn:'!'}[type]||'✓';
+  const style=`position:fixed;bottom:20px;right:20px;z-index:100;background:${bg};color:#fff;font-size:13px;font-weight:500;padding:10px 14px;border-radius:6px;box-shadow:0 8px 24px -4px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;letter-spacing:-0.005em;`;
+  const undoBtn=action==='undo-delete'?`<button data-act="exec-undo" style="margin-left:6px;padding:2px 8px;background:rgba(255,255,255,.15);border-radius:3px;color:#fff;font-weight:600;font-size:11px;letter-spacing:0.02em;text-transform:uppercase;">Undo</button>`:'';
+  const html=`<span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,.15);font-size:10px;font-weight:700;">${icon}</span><span>${esc(msg)}</span>${undoBtn}`;
+  if(el){el.className='toast-in';el.style.cssText=style;el.innerHTML=html;el.style.display='flex';}
+  else{const d=document.createElement('div');d.id='toast';d.className='toast-in';d.style.cssText=style;d.innerHTML=html;document.body.appendChild(d);}
   if(_tt)clearTimeout(_tt);_tt=setTimeout(()=>{const x=document.getElementById('toast');if(x)x.style.display='none';},duration);
 }
 
@@ -312,7 +675,7 @@ async function saveUsers(msg){
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────
-function sbadge(s){return`<span class="inline-flex text-xs font-semibold px-2.5 py-0.5 rounded-full ${SBG[s]||SBG['Not Started']}">${esc(s)}</span>`;}
+function sbadge(s){return`<span class="${SBG[s]||SBG['Not Started']}">${esc(s)}</span>`;}
 function sBar(integs){if(!integs.length)return'';const c={};integs.forEach(i=>c[i.status]=(c[i.status]||0)+1);return Object.entries(c).map(([s,n])=>`<div class="h-1.5 ${SDOT[s]||'bg-gray-400'} rounded" style="width:${Math.round(n/integs.length*100)}%"></div>`).join('');}
 function sCounts(integs){const c={};integs.forEach(i=>c[i.status]=(c[i.status]||0)+1);return Object.entries(c).map(([s,n])=>`<span class="flex items-center gap-1 text-xs text-gray-500"><span class="w-2 h-2 inline-block rounded-full ${SDOT[s]||'bg-gray-400'}"></span>${n} ${esc(s)}</span>`).join('');}
 // Clients are shared across all sections now. This lets a modal offer "pick an
@@ -411,15 +774,15 @@ function render(){
   else if(S.view==='ams-client-detail')content=renderAmsClientDetail(S.params.clientId);
   else if(S.view==='admin')content=can('admin')?renderAdmin():`<div class="p-8 text-rose-500">Access denied</div>`;
   const isMobile=window.innerWidth<768;
-  const sbw=isMobile?'0':(S.sidebarCollapsed?'4.2rem':'15.5rem');
-  app.innerHTML=`${S.offlineMode?`<div class="fixed top-0 left-0 right-0 z-[200] bg-amber-500 text-white text-xs font-semibold text-center py-1.5 tracking-wide">⚡ You appear to be offline — saves will fail until your connection is restored</div>`:''}${renderSidebar()}<main class="min-h-screen transition-all" style="margin-left:${sbw}${S.offlineMode?';padding-top:28px':''}">${isMobile?`<div class="fixed top-3 left-3 z-50"><button data-act="toggle-sidebar" class="bg-white border border-gray-200 rounded-xl p-2 shadow-md"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0e7490" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button></div>`:''}${content}</main>${S.modal?renderModal():''}${S.cmdPaletteOpen?renderCmdPalette():''}${isMobile&&!S.sidebarCollapsed?`<div data-act="toggle-sidebar" class="fixed inset-0 bg-black/40 z-30"></div>`:''}`;
+  const sbw=isMobile?'0':(S.sidebarCollapsed?'56px':'232px');
+  app.innerHTML=`${S.offlineMode?`<div style="position:fixed;top:0;left:0;right:0;z-index:200;background:var(--red);color:#fff;font-size:12px;font-weight:500;text-align:center;padding:6px;letter-spacing:0.02em;">You appear to be offline — saves will fail until your connection is restored</div>`:''}${renderSidebar()}<main class="min-h-screen" style="margin-left:${sbw};transition:margin-left 200ms ease;${S.offlineMode?'padding-top:28px;':''}">${isMobile?`<div style="position:fixed;top:12px;left:12px;z-index:50;"><button data-act="toggle-sidebar" class="k-btn k-btn-secondary" style="width:36px;height:36px;padding:0;box-shadow:var(--shadow);"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="14" y2="8"/><line x1="2" y1="12" x2="14" y2="12"/></svg></button></div>`:''}${content}</main>${S.modal?renderModal():''}${S.cmdPaletteOpen?renderCmdPalette():''}${isMobile&&!S.sidebarCollapsed?`<div data-act="toggle-sidebar" style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:30;"></div>`:''}`;
 
 }
 
 function renderSidebar(){
   const collapsed=S.sidebarCollapsed;
   const isMobile=window.innerWidth<768;
-  const w=collapsed&&!isMobile?'4.2rem':'15.5rem';
+  const w=collapsed&&!isMobile?'56px':'232px';
   const hidden=isMobile&&collapsed;
   const isActive=v=>{
     if(v==='clients')return['clients','client-detail','integ-detail'].includes(S.view);
@@ -427,54 +790,68 @@ function renderSidebar(){
     if(v==='ams')return['ams-clients','ams-client-detail'].includes(S.view);
     return S.view===v;
   };
-  const navItem=(view,label,icon,extra='')=>`<button data-act="nav-${view}" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${isActive(view)?'nav-active':'text-gray-600 hover:bg-[#0e7490]/10'} ${extra}">
-    <span class="shrink-0">${icon}</span><span class="truncate label-fade overflow-hidden ${collapsed?'opacity-0 w-0':'opacity-100'}" title="${label}">${label}</span>
+  const ico={
+    dash:`<svg class="k-side-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>`,
+    integ:`<svg class="k-side-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 2L3 9h4l-1 5 5-7H7l1-5z" stroke-linejoin="round"/></svg>`,
+    impl:`<svg class="k-side-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="3" height="10" rx="0.5"/><rect x="6.5" y="3" width="3" height="10" rx="0.5"/><rect x="11" y="3" width="3" height="10" rx="0.5"/></svg>`,
+    ams:`<svg class="k-side-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2.5"/></svg>`,
+    admin:`<svg class="k-side-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M13.5 8h1M1.5 8h1M12.24 3.76l-1.06 1.06M4.82 11.18l-1.06 1.06M12.24 12.24l-1.06-1.06M4.82 4.82L3.76 3.76"/></svg>`,
+    search:`<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M13 13l-2.5-2.5"/></svg>`,
+    logout:`<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2H3v12h3M10 5l3 3-3 3M13 8H6"/></svg>`,
+    chevron:`<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4l4 4-4 4"/></svg>`,
+    sun:`<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="3"/><path d="M8 1v1M8 14v1M15 8h-1M2 8H1M12.95 3.05l-.7.7M3.75 12.25l-.7.7M12.95 12.95l-.7-.7M3.75 3.75l-.7-.7"/></svg>`,
+    moon:`<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a6 6 0 1 0 7 7z"/></svg>`,
+  };
+  const navItem=(view,label,icon)=>`<button data-act="nav-${view}" class="k-side-item ${isActive(view)?'active':''}" ${collapsed?`title="${label}"`:''}>
+    ${icon}${collapsed?'':`<span class="truncate label-fade">${label}</span>`}
   </button>`;
-  const groupLabel=text=>collapsed?'':`<div class="px-3 pt-3 pb-1 text-[10px] font-semibold text-gray-300 uppercase tracking-wider label-fade">${text}</div>`;
-  return`<aside class="fixed inset-y-0 left-0 bg-white border-r border-gray-100 z-40 flex flex-col transition-all" style="width:${w};transform:${hidden?'translateX(-100%)':'translateX(0)'};transition:transform 0.2s ease,width 0.2s ease">
-  <div class="flex items-center ${collapsed?'justify-center':'justify-between'} px-4 h-16 border-b border-gray-100 shrink-0">
-    ${collapsed?`<span class="text-xl font-extrabold brand-k">k</span>`:brandMark(true)}
+  const grp=t=>collapsed?'':`<div class="k-side-group">${t}</div>`;
+
+  return`<aside class="k-sidebar fixed inset-y-0 left-0 z-40 flex flex-col" style="width:${w};transform:${hidden?'translateX(-100%)':'translateX(0)'};transition:transform 200ms ease,width 200ms ease">
+  <div class="k-side-header shrink-0 flex items-center ${collapsed?'justify-center px-2':'justify-between px-4'} h-14">
+    ${collapsed
+      ? `<div style="width:20px;height:20px;border-radius:4px;background:#fff;color:#18181b;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;">K</div>`
+      : `<div class="flex items-center gap-2"><img src="${KOGNOZ_LOGO}" alt="Kognoz" style="height:18px;width:auto;filter:brightness(0) invert(1);"/><span class="k-side-brand">KORA</span></div>`}
   </div>
-  <div class="px-2.5 pt-3">
-    <button data-act="cmdp-open" class="w-full flex items-center gap-2 ${collapsed?'justify-center px-0':'px-3'} py-2 rounded-xl border border-gray-100 text-gray-400 hover:border-[#0e7490]/30 hover:text-[#0e7490] hover:bg-[#0e7490]/5 transition-colors text-xs">
-      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"/></svg>
-      ${collapsed?'':`<span class="flex-1 text-left label-fade">Search</span><kbd class="text-[10px] border border-gray-200 rounded px-1 py-0.5 label-fade">⌘K</kbd>`}
+  <div class="px-3 pt-3 pb-1">
+    <button data-act="cmdp-open" class="w-full flex items-center gap-2 k-side-search rounded-md px-2.5 ${collapsed?'justify-center':''}">
+      ${ico.search}
+      ${collapsed?'':`<span class="flex-1 text-left label-fade" style="font-size:12px;">Search…</span><kbd style="font-size:10px;padding:1px 5px;border:1px solid rgba(255,255,255,.1);border-radius:3px;color:#71717a;font-family:var(--font);">⌘K</kbd>`}
     </button>
   </div>
-  <nav class="flex-1 overflow-y-auto sidebar-scroll px-2.5 py-3 space-y-1">
-    ${navItem('dashboard','Dashboard',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10M9 21h6"/></svg>`)}
-    ${navItem('clients','Integrations',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>`)}
-    ${navItem('impl','Implementations',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>`)}
-    ${navItem('ams','AMS & Support',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V6m0 2v8m0 0v2m0-2c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`)}
-    ${can('admin')?groupLabel('System'):''}
-    ${can('admin')?navItem('admin','Admin',`<svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`):''}
+  <nav class="flex-1 overflow-y-auto sidebar-scroll pt-2 pb-3">
+    ${!collapsed?'<div class="k-side-group" style="margin-top:8px;">Main</div>':''}
+    ${navItem('dashboard','Dashboard',ico.dash)}
+    ${grp('Trackers')}
+    ${navItem('clients','Integrations',ico.integ)}
+    ${navItem('impl','Implementations',ico.impl)}
+    ${navItem('ams','AMS & Support',ico.ams)}
+    ${can('admin')?grp('System'):''}
+    ${can('admin')?navItem('admin','Admin',ico.admin):''}
   </nav>
-  <div class="border-t border-gray-100 p-2.5 shrink-0">
-    ${!collapsed?`<button data-act="open-profile" class="flex items-center gap-2 px-2 py-2 mb-1 w-full rounded-xl hover:bg-[#0e7490]/8 transition text-left group">
-      <div class="w-8 h-8 rounded-full bg-[#0e7490] text-white flex items-center justify-center text-xs font-bold shrink-0">${esc((S.user?.name||'?')[0])}</div>
+  <div class="k-side-profile shrink-0">
+    ${!collapsed?`<button data-act="open-profile" class="w-full flex items-center gap-2.5 mb-2 rounded-md p-1.5 hover:bg-white/5 text-left" style="transition:background 120ms ease;">
+      <div style="width:28px;height:28px;border-radius:50%;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;">${esc((S.user?.name||'?')[0].toUpperCase())}</div>
       <div class="min-w-0 flex-1">
-        <div class="text-xs font-semibold text-gray-800 truncate" title="${esc(S.user?.name)}">${esc(S.user?.name)}</div>
-        <div class="text-[10px] text-gray-400 capitalize">${esc(S.user?.role)} · <span class="text-[#0e7490] group-hover:underline">My Profile</span></div>
+        <div style="font-size:12px;font-weight:500;color:#fafafa;" class="truncate">${esc(S.user?.name)}</div>
+        <div class="k-side-tag" style="text-transform:capitalize;">${esc(S.user?.role)}</div>
       </div>
-    </button>`:''}
-    ${collapsed?`<button data-act="toggle-dark" title="Toggle dark mode" class="w-8 h-8 rounded-full bg-gray-50 border border-gray-200 flex items-center justify-center text-sm hover:border-[#0e7490]/30 transition mx-auto mb-1.5">${S.darkMode?'🌙':'☀️'}</button>`:`<div class="flex items-center justify-between px-2 py-1.5 mb-1">
-      <span class="text-xs text-gray-400">Theme</span>
-      <button data-act="toggle-dark" title="Toggle dark mode" class="relative w-12 h-6 rounded-full transition-colors ${S.darkMode?'bg-[#0e7490]':'bg-gray-200'}">
-        <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm flex items-center justify-center text-[10px] transition-transform" style="transform:translateX(${S.darkMode?'24px':'0px'})">${S.darkMode?'🌙':'☀️'}</span>
+    </button>`:``}
+    <div class="${collapsed?'flex flex-col items-center gap-1.5':'flex items-center gap-1'}">
+      <button data-act="toggle-dark" title="Toggle theme" class="k-side-item ${collapsed?'':'flex-1'}" style="justify-content:center;padding:0;margin:0;height:28px;${collapsed?'width:32px;':''}">
+        ${S.darkMode?ico.moon:ico.sun}
       </button>
-    </div>`}
-    <div class="flex justify-center mb-1.5">${collapsed?encBadge({compact:true}):encBadge()}</div>
-    <button data-act="logout" class="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition ${collapsed?'justify-center':''}">
-      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>${collapsed?'':'Sign out'}
-    </button>
-    <button data-act="toggle-sidebar" class="w-full flex items-center justify-center gap-2 px-3 py-2 mt-1 rounded-lg text-xs text-gray-300 hover:text-gray-500 hover:bg-gray-50 transition">
-      <svg class="w-4 h-4 transition-transform ${collapsed?'rotate-180':''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/></svg>
-    </button>
+      <button data-act="logout" title="Sign out" class="k-side-item ${collapsed?'':'flex-1'}" style="justify-content:center;padding:0;margin:0;height:28px;${collapsed?'width:32px;':''}color:var(--mute-2);">
+        ${ico.logout}
+      </button>
+      <button data-act="toggle-sidebar" title="${collapsed?'Expand':'Collapse'}" class="k-side-item" style="justify-content:center;padding:0;margin:0;height:28px;width:32px;">
+        <span style="display:inline-block;transform:rotate(${collapsed?'0':'180'}deg);transition:transform 200ms ease;">${ico.chevron}</span>
+      </button>
+    </div>
   </div>
 </aside>`;
 }
 
-// ─── LOGIN ────────────────────────────────────────────────────────
 function lockIcon(cls='w-3.5 h-3.5'){return`<svg class="${cls} shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-12V7a4 4 0 10-8 0v4h8z"/></svg>`;}
 function encBadge(opts={}){
   const{compact=false}=opts;
@@ -488,24 +865,30 @@ function encBadge(opts={}){
   </div>`;
 }
 function renderLogin(){
-  return`<div class="min-h-screen bg-gradient-to-br from-[#0d3d4f] via-[#0e7490] to-[#0d3d4f] flex items-center justify-center p-4">
-  <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm fade">
-    <div class="text-center mb-8">
-      <div class="inline-flex flex-col items-center mb-3">
-        <img src="${KOGNOZ_LOGO}" alt="Kognoz" style="height:52px;width:auto;object-fit:contain;margin-bottom:6px;" />
-        <span class="text-[11px] font-semibold text-[#0e7490] tracking-widest uppercase">KORA</span>
+  return`<div class="min-h-screen flex items-center justify-center p-4" style="background:var(--surface);">
+  <div class="fade" style="width:100%;max-width:380px;">
+    <div class="k-card" style="padding:40px 32px;box-shadow:var(--shadow);">
+      <div class="text-center" style="margin-bottom:32px;">
+        <img src="${KOGNOZ_LOGO}" alt="Kognoz" style="height:44px;width:auto;object-fit:contain;margin:0 auto 16px;display:block;" />
+        <div style="font-size:11px;font-weight:600;letter-spacing:0.24em;color:var(--teal);text-transform:uppercase;">Kora</div>
+        <p style="font-size:12px;color:var(--mute);margin-top:12px;">Delivery Intelligence Platform</p>
       </div>
-      <p class="text-xs text-gray-400 mt-2">Delivery Intelligence Platform</p>
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div>
+          <label style="display:block;margin-bottom:6px;">Username</label>
+          <input id="lu" type="text" autocomplete="username" placeholder="username"/>
+        </div>
+        <div>
+          <label style="display:block;margin-bottom:6px;">Password</label>
+          <input id="lp" type="password" autocomplete="current-password" placeholder="••••••••"/>
+        </div>
+        <div id="lerr" class="hidden" style="font-size:12px;color:var(--red);background:var(--red-hi);padding:8px 12px;border-radius:var(--radius);text-align:center;"></div>
+        <button data-act="login" class="k-btn k-btn-primary k-btn-lg" style="width:100%;margin-top:4px;">Sign In</button>
+      </div>
     </div>
-    <div class="space-y-4">
-      <div><label class="block text-xs font-medium text-gray-500 mb-1.5">Username</label>
-        <input id="lu" type="text" autocomplete="username" placeholder="username" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
-      <div><label class="block text-xs font-medium text-gray-500 mb-1.5">Password</label>
-        <input id="lp" type="password" autocomplete="current-password" placeholder="••••••••" class="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0e7490]"/></div>
-      <div id="lerr" class="hidden text-xs text-rose-500 text-center bg-rose-50 py-2 rounded-lg px-3"></div>
-      <button data-act="login" class="w-full btn-grad text-white font-semibold rounded-xl py-2.5 text-sm transition-colors">Sign In</button>
+    <div style="text-align:center;margin-top:20px;font-size:11px;color:var(--mute);">
+      Secured with AES-256 encryption
     </div>
-    <div class="flex justify-center mt-6">${encBadge()}</div>
   </div>
 </div>`;
 }
@@ -561,35 +944,48 @@ function renderDashboard(){
     if(tm.hasBucket&&tm.balanceAvailable<=Math.max(2,tm.totalAvailableHours*0.15)){amsLowBalance.push({name:c.name,id:c.id,balance:tm.balanceAvailable,total:tm.totalAvailableHours});}
   });
 
-  return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
-  <div class="flex items-center justify-between mb-1">
-    <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
-    ${can('admin')?`<button data-act="portfolio-export" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">📦 Portfolio Export</button>`:''}
-  </div>
-  <p class="text-sm text-gray-400 mb-6">Overview across all clients and integrations</p>
-
-  <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-    ${[['Clients',S.clients.length,'text-[#0e7490]','bg-[#0e7490]/10'],['Integrations',ti,'text-gray-700','bg-gray-100'],['In Progress',ip,'text-[#0e7490]','bg-cyan-50'],[`At Risk ${atRiskPct?`(${atRiskPct}%)`:''} `,ar,'text-rose-600','bg-rose-50'],['Updates this week',thisWeekUpdates,'text-violet-600','bg-violet-50']]
-    .map(([l,v,tc,bg],idx)=>`<div style="animation-delay:${idx*30}ms" class="row-in ${bg} rounded-2xl p-4"><div class="text-2xl font-extrabold ${tc}">${v}</div><div class="text-xs text-gray-500 mt-0.5">${l}</div></div>`).join('')}
+  return`<div class="k-page fade">
+  <div class="k-page-header">
+    <div>
+      <h1 class="k-h1">Dashboard</h1>
+      <p style="font-size:13px;color:var(--mute);margin-top:4px;">Overview across all clients and integrations</p>
+    </div>
+    ${can('admin')?`<button data-act="portfolio-export" class="k-btn k-btn-primary">Portfolio Export</button>`:''}
   </div>
 
-  <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Across Your Trackers</h2>
+  <div class="k-card" style="padding:24px;margin-bottom:32px;">
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0;">
+      ${[
+        ['Clients',S.clients.length,''],
+        ['Integrations',ti,''],
+        ['In Progress',ip,''],
+        ['At Risk',ar,atRiskPct?`${atRiskPct}% of total`:''],
+        ['Updates',thisWeekUpdates,'past 7 days']
+      ].map(([l,v,sub],idx)=>`<div style="padding:0 20px;${idx>0?'border-left:1px solid var(--line);':''}${idx===0?'padding-left:0;':''}${idx===4?'padding-right:0;':''}">
+        <div class="k-num-l">${v}</div>
+        <div class="k-eyebrow" style="margin-top:8px;">${l}</div>
+        ${sub?`<div style="font-size:11px;color:var(--mute);margin-top:2px;">${sub}</div>`:''}
+      </div>`).join('')}
+    </div>
+  </div>
+
+  <div class="k-eyebrow" style="margin-bottom:12px;">Across your trackers</div>
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-    <div class="bg-white rounded-2xl border border-gray-100 p-5">
+    <div class="k-card" style="padding:20px;">
       <div class="flex items-center justify-between mb-4">
-        <h3 class="font-semibold text-gray-900 text-sm">Implementations</h3>
-        <button data-act="nav-impl" class="text-xs text-[#0e7490] hover:underline font-medium">View all →</button>
+        <h3 class="k-h3">Implementations</h3>
+        <button data-act="nav-impl" class="k-btn k-btn-ghost k-btn-sm">View all →</button>
       </div>
-      <div class="grid grid-cols-2 gap-3 mb-4">
-        <div><div class="text-xl font-extrabold text-gray-700">${implActiveClients.length}</div><div class="text-xs text-gray-500">Active Clients</div></div>
-        <div><div class="text-xl font-extrabold ${implAtRiskClients.length?'text-rose-600':'text-gray-700'}">${implAtRiskClients.length}</div><div class="text-xs text-gray-500">Need Attention</div></div>
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div><div class="k-num-l" style="font-size:22px;">${implActiveClients.length}</div><div class="k-eyebrow" style="margin-top:4px;">Active Clients</div></div>
+        <div><div class="k-num-l" style="font-size:22px;color:${implAtRiskClients.length?'var(--red)':'var(--ink)'};">${implAtRiskClients.length}</div><div class="k-eyebrow" style="margin-top:4px;">Need Attention</div></div>
       </div>
-      ${implTotalPhases?`<div class="flex gap-0.5 h-2.5 rounded-full overflow-hidden bg-gray-100 mb-1">
-        ${STATUSES.map(s=>{const n=allPhases.filter(ph=>ph.status===s).length;return n?`<div class="${SDOT[s]} bar-fill" style="width:${Math.round(n/implTotalPhases*100)}%" title="${s}: ${n}"></div>`:'';}).join('')}
+      ${implTotalPhases?`<div class="flex gap-0.5 h-1.5 rounded overflow-hidden mb-2" style="background:var(--line-2);">
+        ${STATUSES.map(s=>{const n=allPhases.filter(ph=>ph.status===s).length;const c={'Completed':'var(--green)','In Progress':'var(--teal)','At Risk':'var(--red)','Delayed':'var(--red)','Not Started':'var(--mute-2)'}[s]||'var(--mute-2)';return n?`<div class="bar-fill" style="width:${Math.round(n/implTotalPhases*100)}%;background:${c}!important" title="${s}: ${n}"></div>`:'';}).join('')}
       </div>
-      <div class="text-xs text-gray-400 mb-1">${implTotalPhases} phases tracked across ${implClients.length} client${implClients.length!==1?'s':''}</div>`:`<div class="text-xs text-gray-400 text-center py-3">${emptyIcon('chart')}No implementation data yet.</div>`}
-      ${implAtRiskClients.length?`<div class="space-y-1.5 mt-3 pt-3 border-t border-gray-50">${implAtRiskClients.slice(0,3).map((c,idx)=>`<div data-act="open-impl-client" data-id="${c.id}" style="animation-delay:${idx*25}ms" class="row-in flex items-center justify-between text-xs cursor-pointer hover:bg-rose-50 -mx-1 px-1 py-1 rounded-lg text-rose-600 transition-colors">
-        <span class="truncate" title="${esc(c.name)}">${esc(c.name)}</span><span class="shrink-0">⚠</span>
+      <div style="font-size:12px;color:var(--mute);margin-bottom:8px;">${implTotalPhases} phases tracked across ${implClients.length} client${implClients.length!==1?'s':''}</div>`:`<div style="font-size:12px;color:var(--mute);text-align:center;padding:12px;">No implementation data yet.</div>`}
+      ${implAtRiskClients.length?`<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line-2);display:flex;flex-direction:column;gap:4px;">${implAtRiskClients.slice(0,3).map((c,idx)=>`<div data-act="open-impl-client" data-id="${c.id}" style="animation-delay:${idx*25}ms;display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:6px 8px;margin:0 -8px;border-radius:var(--radius);transition:background 120ms;cursor:pointer;" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background=''">
+        <span class="truncate k-rag k-rag-red" title="${esc(c.name)}">${esc(c.name)}</span>
       </div>`).join('')}</div>`:''}
     </div>
 
@@ -680,7 +1076,7 @@ function renderClientList(){
   const ti=S.clients.reduce((a,c)=>a+c.integrations.length,0);
   const ar=S.clients.reduce((a,c)=>a+c.integrations.filter(i=>i.status==='At Risk').length,0);
   const ip=S.clients.reduce((a,c)=>a+c.integrations.filter(i=>i.status==='In Progress').length,0);
-  return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
+  return`<div class="k-page fade">
   <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
     ${[['Clients',S.clients.length,'text-[#0e7490]','bg-[#0e7490]/10'],['Total Integrations',ti,'text-gray-700','bg-gray-100'],['In Progress',ip,'text-[#0e7490]','bg-cyan-50'],['At Risk',ar,'text-rose-600','bg-rose-50']].map(([l,v,tc,bg])=>`<div class="${bg} rounded-2xl p-4"><div class="text-2xl font-bold ${tc}">${v}</div><div class="text-xs text-gray-500 mt-0.5">${l}</div></div>`).join('')}
   </div>
@@ -724,7 +1120,7 @@ function renderImplClientList(){
   const totalModules=implClients.reduce((a,c)=>a+(c.modules?.length||0),0);
   const atRiskClients=implClients.filter(c=>implAutoRag(c)==='Red').length;
   const amberClients=implClients.filter(c=>implAutoRag(c)==='Amber').length;
-  return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
+  return`<div class="k-page fade">
   <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
     ${[['Clients',implClients.length,'text-[#0e7490]','bg-[#0e7490]/10'],['Total Modules',totalModules,'text-gray-700','bg-gray-100'],['Amber',amberClients,'text-amber-600','bg-amber-50'],['Red',atRiskClients,'text-rose-600','bg-rose-50']].map(([l,v,tc,bg])=>`<div class="${bg} rounded-2xl p-4"><div class="text-2xl font-bold ${tc}">${v}</div><div class="text-xs text-gray-500 mt-0.5">${l}</div></div>`).join('')}
   </div>
@@ -759,7 +1155,7 @@ function renderImplClientDetail(clientId){
   const bulk=S.bulkImplMode&&S.bulkImplCid===c.id;
   const sel=S.bulkSelected;
   const selCount=sel.size;
-  return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
+  return`<div class="k-page fade">
   <div class="flex items-center gap-2 text-sm text-gray-400 mb-4">
     <button data-act="nav-impl" class="hover:text-[#0e7490]">Implementations</button><span>›</span>
     <span class="text-gray-900 font-medium">${esc(c.name)}</span>
@@ -1039,9 +1435,9 @@ function parseIntegrationsCsv(text,existingIntegs=[]){
     return{name:name||'',status:STATUSES.includes(status)?status:'Not Started',assignee:assignee||'',dueDate:due_date||'',description:description||'',nextAction:next_action||'',error,row:i+(hasHeader?2:1)};
   });
 }
-const RAG_BADGE={Red:'bg-rose-100 text-rose-700 border-rose-200',Amber:'bg-amber-100 text-amber-700 border-amber-200',Green:'bg-green-100 text-green-700 border-green-200'};
-const RAG_DOT={Red:'bg-rose-500',Amber:'bg-amber-500',Green:'bg-green-500'};
-function ragBadge(rag,size='sm'){if(!rag)return'<span class="text-gray-300 text-xs">—</span>';return`<span class="text-${size} font-semibold border px-1.5 py-0.5 rounded-lg ${RAG_BADGE[rag]||''}">${rag==='Red'?'🔴':rag==='Amber'?'🟡':'🟢'} ${rag}</span>`;}
+const RAG_BADGE={Red:'k-rag k-rag-red',Amber:'k-rag k-rag-amber',Green:'k-rag k-rag-green'};
+const RAG_DOT={Red:'k-rag-red',Amber:'k-rag-amber',Green:'k-rag-green'};
+function ragBadge(rag,size='sm'){if(!rag)return'<span class="text-xs" style="color:var(--mute-2)">—</span>';return`<span class="${RAG_BADGE[rag]||''}">${rag}</span>`;}
 function amsClientRag(client){
   const entries=client.workLog||[];
   const open=entries.filter(e=>(e.entryStatus||'Open')!=='Closed');
@@ -1077,7 +1473,7 @@ function amsTotals(client,fromDate,toDate){
   return{log,totalHours,totalAmount,byType,hasRate,hasBucket,totalAvailableHours:bucket,billableHours,coveredHours,consumedAllTime:allTimeHours,balanceAvailable};
 }
 function renderAmsClientList(){
-  return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
+  return`<div class="k-page fade">
   <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
     <h1 class="text-xl font-bold text-gray-900">AMS &amp; Support Retainers</h1>
     ${can('admin')?`<button data-act="modal-open" data-modal="add-ams-client" class="btn-grad text-white text-sm font-semibold px-4 py-2 rounded-xl transition">+ Add Client</button>`:''}
@@ -1215,7 +1611,7 @@ function renderClientDetail(clientId){
   const fl=S.filter==='all'?c.integrations:c.integrations.filter(i=>i.status===S.filter);
   const sorted=sortIntegs(fl);
   const cols=[['name','Integration'],['status','Status'],['assignee','Assignee'],['due','Due Date'],['lastUpdate','Last Update']];
-  return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
+  return`<div class="k-page fade">
   <div class="flex items-center gap-2 text-sm text-gray-400 mb-4">
     <button data-act="nav-clients" class="hover:text-[#0e7490]">Clients</button><span>›</span>
     <span class="text-gray-900 font-medium">${esc(c.name)}</span>
@@ -1379,7 +1775,7 @@ function renderIntegDetail(clientId,integId){
 
 // ─── ADMIN ────────────────────────────────────────────────────────
 function renderAdmin(){
-  return`<div class="max-w-7xl mx-auto px-6 py-7 fade">
+  return`<div class="k-page fade">
   <h1 class="text-xl font-bold text-gray-900 mb-5">Admin</h1>
   <div class="flex border-b border-gray-200 mb-6 gap-1 overflow-x-auto">
     ${[['integrations','Clients & Integrations'],['implementations','Implementation Clients'],['ams','AMS Clients'],['users','Users']].map(([t,l])=>`<button data-act="admin-tab" data-tab="${t}" class="whitespace-nowrap px-4 py-2.5 text-sm font-medium border-b-2 transition ${S.adminTab===t?'border-[#0e7490] text-[#0e7490]':'border-transparent text-gray-500 hover:text-gray-800'}">${l}</button>`).join('')}
@@ -1752,16 +2148,16 @@ function renderModal(){
   }
   const busy=!!m.busy;
   const busyLabel=m.type==='confirm'?'Deleting…':'Saving…';
-  return`<div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 fade" id="modal-overlay">
-  <div class="${['add-ams-entry','edit-ams-entry','bulk-import-users','portfolio-export','import-ams-entries','import-integrations'].includes(m.type)?'max-w-2xl':'max-w-md'} bg-white rounded-2xl shadow-2xl w-full p-6 modal-pop overflow-y-auto max-h-[90vh]">
-    <div class="flex items-center justify-between mb-5">
-      <h2 class="font-bold text-gray-900">${esc(title)}</h2>
-      <button data-act="modal-close" ${busy?'disabled class="text-gray-200 text-xl leading-none cursor-not-allowed"':'class="text-gray-400 hover:text-gray-600 text-xl leading-none"'}>✕</button>
+  return`<div class="k-modal-overlay fade" id="modal-overlay">
+  <div class="k-modal modal-pop" style="max-width:${['add-ams-entry','edit-ams-entry','bulk-import-users','portfolio-export','import-ams-entries','import-integrations'].includes(m.type)?'640px':'440px'};">
+    <div class="k-modal-header flex items-center justify-between">
+      <h2 class="k-h2">${esc(title)}</h2>
+      <button data-act="modal-close" ${busy?'disabled':''} class="k-btn k-btn-ghost k-btn-sm" style="height:28px;width:28px;padding:0;">✕</button>
     </div>
-    ${body}
-    <div class="flex gap-3 mt-6">
-      <button data-act="modal-close" ${busy?'disabled':''} class="flex-1 border border-gray-200 text-gray-600 font-medium rounded-xl py-2.5 text-sm hover:bg-gray-50 transition ${busy?'opacity-50 cursor-not-allowed':''}">Cancel</button>
-      <button data-act="modal-confirm" ${busy?'disabled':''} class="flex-1 ${btnCls} text-white font-semibold rounded-xl py-2.5 text-sm transition flex items-center justify-center gap-2 ${busy?'opacity-80 cursor-not-allowed':''}">${busy?spinnerSvg()+busyLabel:btnLabel}</button>
+    <div class="k-modal-body">${body}</div>
+    <div class="k-modal-footer">
+      <button data-act="modal-close" ${busy?'disabled':''} class="k-btn k-btn-secondary">Cancel</button>
+      <button data-act="modal-confirm" ${busy?'disabled':''} class="k-btn k-btn-primary" style="min-width:120px;">${busy?spinnerSvg()+busyLabel:btnLabel}</button>
     </div>
   </div>
 </div>`;
