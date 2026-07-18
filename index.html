@@ -808,10 +808,14 @@ function renderSidebar(){
   const grp=t=>collapsed?'':`<div class="k-side-group">${t}</div>`;
 
   return`<aside class="k-sidebar fixed inset-y-0 left-0 z-40 flex flex-col" style="width:${w};transform:${hidden?'translateX(-100%)':'translateX(0)'};transition:transform 200ms ease,width 200ms ease">
-  <div class="k-side-header shrink-0 flex items-center ${collapsed?'justify-center px-2':'justify-between px-4'} h-14">
+  <div class="k-side-header shrink-0 flex flex-col items-center justify-center ${collapsed?'px-1 py-3':'px-4 py-5'}" style="background:#ffffff;">
     ${collapsed
-      ? `<div style="width:20px;height:20px;border-radius:4px;background:#fff;color:#18181b;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;">K</div>`
-      : `<div class="flex items-center gap-2"><img src="${KOGNOZ_LOGO}" alt="Kognoz" style="height:18px;width:auto;filter:brightness(0) invert(1);"/><span class="k-side-brand">KORA</span></div>`}
+      ? `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <img src="${KOGNOZ_LOGO}" alt="Kognoz" style="height:26px;width:auto;object-fit:contain;display:block;" />
+          <span style="font-size:9px;font-weight:700;letter-spacing:0.14em;color:var(--teal);text-transform:uppercase;line-height:1;">Kora</span>
+        </div>`
+      : `<img src="${KOGNOZ_LOGO}" alt="Kognoz" style="height:52px;width:auto;max-width:180px;object-fit:contain;display:block;margin-bottom:6px;" />
+        <span style="font-size:22px;font-weight:700;letter-spacing:0.18em;color:var(--teal);text-transform:uppercase;line-height:1;">Kora</span>`}
   </div>
   <div class="px-3 pt-3 pb-1">
     <button data-act="cmdp-open" class="w-full flex items-center gap-2 k-side-search rounded-md px-2.5 ${collapsed?'justify-center':''}">
@@ -869,9 +873,9 @@ function renderLogin(){
   <div class="fade" style="width:100%;max-width:380px;">
     <div class="k-card" style="padding:40px 32px;box-shadow:var(--shadow);">
       <div class="text-center" style="margin-bottom:32px;">
-        <img src="${KOGNOZ_LOGO}" alt="Kognoz" style="height:44px;width:auto;object-fit:contain;margin:0 auto 16px;display:block;" />
-        <div style="font-size:11px;font-weight:600;letter-spacing:0.24em;color:var(--teal);text-transform:uppercase;">Kora</div>
-        <p style="font-size:12px;color:var(--mute);margin-top:12px;">Delivery Intelligence Platform</p>
+        <img src="${KOGNOZ_LOGO}" alt="Kognoz" style="height:52px;width:auto;object-fit:contain;margin:0 auto 12px;display:block;" />
+        <div style="font-size:26px;font-weight:700;letter-spacing:0.18em;color:var(--teal);text-transform:uppercase;line-height:1;">Kora</div>
+        <p style="font-size:12px;color:var(--mute);margin-top:14px;">Delivery Intelligence Platform</p>
       </div>
       <div style="display:flex;flex-direction:column;gap:16px;">
         <div>
